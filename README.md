@@ -6,9 +6,10 @@ A Laravel-based gym management platform that supports member and trainer onboard
 ## Features
 
 - Member,Trainer and admin authentication with token-based APIs (Laravel Sanctum)
-- Attendance tracking with QR/scan support
+- Attendance tracking with RFID system support
 - Subscription plans, pricing management, and renewals
 - Trainer profiles and booking workflows
+- User profiles and booking workflows
 - Admin dashboard with export/reporting endpoints
 - Blog/content management
 - CAPTCHA integrations for user flows
