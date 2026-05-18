@@ -108,6 +108,16 @@ class RfidAttendanceController extends Controller
             }
 
             if (!$attendance->check_out_time) {
+                if (
+                    $attendance->check_in_time
+                    && $attendance->check_in_time->diffInMilliseconds($now) < 2000
+                ) {
+                    return [
+                        'action' => 'duplicate_scan',
+                        'attendance' => $attendance,
+                    ];
+                }
+
                 $attendance->forceFill([
                     'check_out_time' => $now,
                 ])->save();
@@ -147,6 +157,26 @@ class RfidAttendanceController extends Controller
                     'role' => $user->role,
                     'card_id' => $user->card_id,
                     ],
+                'attendance' => [
+                    'action' => $result['action'],
+                    'check_in_time' => $result['attendance']->check_in_time?->toIso8601String(),
+                    'check_out_time' => $result['attendance']->check_out_time?->toIso8601String(),
+                    'attendance_date' => $result['attendance']->attendance_date?->toDateString(),
+                    'source' => $result['attendance']->source,
+                ],
+            ]);
+        }
+
+        if ($result['action'] === 'duplicate_scan') {
+            return response()->json([
+                'message' => 'Duplicate scan ignored.',
+                'user' => [
+                    'id' => $user->id,
+                    'member_id' => $user->user_id,
+                    'name' => $user->name,
+                    'role' => $user->role,
+                    'card_id' => $user->card_id,
+                ],
                 'attendance' => [
                     'action' => $result['action'],
                     'check_in_time' => $result['attendance']->check_in_time?->toIso8601String(),

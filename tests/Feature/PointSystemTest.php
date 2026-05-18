@@ -2,6 +2,7 @@
 
 use App\Models\Point;
 use App\Models\User;
+use Carbon\Carbon;
 use Laravel\Sanctum\Sanctum;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -113,9 +114,13 @@ it('awards rfid scan points on check-out and creates a points row when missing',
 
     Sanctum::actingAs($member);
 
+    Carbon::setTestNow(now());
+
     $this->postJson('/api/attendance/rfid/scan', [
         'card_id' => 'RFID-0005',
     ])->assertOk()->assertJsonPath('attendance.action', 'check_in');
+
+    Carbon::setTestNow(now()->addSeconds(2));
 
     $this->postJson('/api/attendance/rfid/scan', [
         'card_id' => 'RFID-0005',
@@ -125,6 +130,8 @@ it('awards rfid scan points on check-out and creates a points row when missing',
         'user_id' => $member->id,
         'point' => 50,
     ]);
+
+    Carbon::setTestNow();
 });
 
 
