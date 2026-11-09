@@ -61,12 +61,20 @@ class MembershipPlanController extends Controller
 
     public function destroy(MembershipPlan $membershipPlan): JsonResponse
     {
-        if ($membershipPlan->is_active) {
-            $membershipPlan->update(['is_active' => false]);
+        if (! $membershipPlan->is_active) {
+            return response()->json([
+                'message' => 'Membership plan is already archived.',
+                'plan' => $membershipPlan->fresh(),
+            ]);
         }
+
+        $membershipPlan->update([
+            'is_active' => false,
+        ]);
 
         return response()->json([
             'message' => 'Membership plan archived successfully.',
+            'plan' => $membershipPlan->fresh(),
         ]);
     }
 

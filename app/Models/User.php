@@ -3,29 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\HasApiTokens;
-use App\Models\AttendanceScan;
-use App\Models\RfidAttendance;
-use App\Models\TrainerBooking;
-use App\Models\BoxingBooking;
-use App\Models\MemberMembership;
-use App\Models\Point;
 
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable,SoftDeletes;
 
-     /**
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
      */
-
     protected $fillable = [
         'user_id',
         'name',
@@ -54,7 +47,7 @@ class User extends Authenticatable
         ];
     }
 
-        /**
+    /**
      * Boot the model.
      * Prevent creating multiple administrator accounts.
      */
@@ -88,7 +81,6 @@ class User extends Authenticatable
         //         ])->saveQuietly();
         //     }
         // });
-
 
         static::updating(function ($user) {
             // Prevent changing a non root user to administrator if one already exists
@@ -124,12 +116,6 @@ class User extends Authenticatable
             }
         });
 
-
-    }
-
-    public function role()
-    {
-        return $this->belongsTo(Role::class);
     }
 
     public function attendanceScans()
@@ -162,7 +148,6 @@ class User extends Authenticatable
         return $this->hasMany(BoxingBooking::class, 'trainer_id');
     }
 
-
     public function boxingBookings()
     {
         return $this->hasMany(BoxingBooking::class, 'member_id');
@@ -177,5 +162,4 @@ class User extends Authenticatable
     {
         return $this->hasOne(Point::class);
     }
-
 }

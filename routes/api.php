@@ -25,7 +25,6 @@ use App\Http\Controllers\Api\UserRecordsController;
 use App\Http\Controllers\Api\GymClassController;
 use App\Http\Controllers\Api\PointController;
 use App\Http\Controllers\Api\MembershipPlanController;
-use Mews\Captcha\Facades\Captcha;
 
 // Login endpoint - rate limiting is handled in LoginRequest class
 // 5 attempts per email+IP combination with 60 second lockout
@@ -49,15 +48,27 @@ Route::get('/version', function () {
 
 // CAPTCHA endpoints (public)
 Route::get('/captcha', function () {
-    return response()->json(['captcha' => captcha_img()]);
+    $captcha = app('captcha')->create('default', true);
+
+    return response()->json([
+        ...$captcha,
+        'captcha' => '<img src="'.$captcha['img'].'" alt="captcha">',
+    ]);
 });
 
 Route::get('/captcha/refresh', function () {
-    return response()->json(['captcha' => captcha_img()]);
+    $captcha = app('captcha')->create('default', true);
+
+    return response()->json([
+        ...$captcha,
+        'captcha' => '<img src="'.$captcha['img'].'" alt="captcha">',
+    ]);
 });
 
 Route::get('/captcha/api/{config?}', function (?string $config = null) {
-    return response()->json(['captcha' => Captcha::src($config)]);
+    return response()->json(
+        app('captcha')->create($config ?? 'default', true)
+    );
 });
 
 

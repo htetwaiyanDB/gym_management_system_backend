@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::table('boxing_bookings', function (Blueprint $table) {
             // Drop existing foreign keys
-            $table->dropForeign('boxing_bookings_member_id_foreign');
-            $table->dropForeign('boxing_bookings_trainer_id_foreign');
-            
+            $table->dropForeign(['member_id']);
+            $table->dropForeign(['trainer_id']);
+
             // Recreate foreign keys pointing to users table
             $table->foreign('member_id')->references('id')->on('users')->cascadeOnDelete();
             $table->foreign('trainer_id')->references('id')->on('users')->cascadeOnDelete();
@@ -29,9 +29,9 @@ return new class extends Migration
     {
         Schema::table('boxing_bookings', function (Blueprint $table) {
             // Drop users table foreign keys
-            $table->dropForeign('boxing_bookings_member_id_foreign');
-            $table->dropForeign('boxing_bookings_trainer_id_foreign');
-            
+            $table->dropForeign(['member_id']);
+            $table->dropForeign(['trainer_id']);
+
             // Recreate foreign keys pointing to members and trainers tables
             $table->foreign('member_id')->references('id')->on('members')->cascadeOnDelete();
             $table->foreign('trainer_id')->references('id')->on('trainers')->cascadeOnDelete();

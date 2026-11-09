@@ -23,7 +23,7 @@ it('allows only administrators to list and manage plans', function () {
 
     $this->getJson('/api/membership-plans')
         ->assertOk()
-        ->assertJsonPath('plans.0.name', 'Visible Plan');
+        ->assertJsonFragment(['name' => 'Visible Plan']);
 
     Sanctum::actingAs(User::factory()->create(['role' => 'user']));
 
@@ -110,17 +110,88 @@ it('archives, filters, includes and restores plans without deleting them', funct
 
     $this->deleteJson("/api/membership-plans/{$plan->id}")
         ->assertOk()
-        ->assertJsonPath('message', 'Membership plan archived successfully.');
+        ->assertJsonPath('message', 'Membership plan archived successfully.')
+        ->assertJsonPath('plan.id', $plan->id)
+        ->assertJsonPath('plan.is_active', false);
 
     $this->assertDatabaseHas('membership_plans', ['id' => $plan->id, 'is_active' => false]);
     $this->getJson('/api/membership-plans')->assertJsonMissing(['id' => $plan->id]);
     $this->getJson('/api/membership-plans?include_inactive=1')
         ->assertJsonFragment(['id' => $plan->id, 'is_active' => false]);
 
-    $this->deleteJson("/api/membership-plans/{$plan->id}")->assertOk();
+    $this->deleteJson("/api/membership-plans/{$plan->id}")
+        ->assertOk()
+        ->assertJsonPath('message', 'Membership plan is already archived.')
+        ->assertJsonPath('plan.id', $plan->id)
+        ->assertJsonPath('plan.is_active', false);
     $this->patchJson("/api/membership-plans/{$plan->id}", ['is_active' => true])
         ->assertOk()
         ->assertJsonPath('plan.is_active', true);
+});
+
+it('archives built-in plans through the generic membership plan endpoint', function (string $name, int $durationDays, string $planType) {
+    $plan = MembershipPlan::create([
+        'name' => $name,
+        'duration_days' => $durationDays,
+        'price' => 100000,
+        'plan_type' => $planType,
+        'is_active' => true,
+    ]);
+
+    $this->deleteJson("/api/membership-plans/{$plan->id}")
+        ->assertOk()
+        ->assertJsonPath('message', 'Membership plan archived successfully.')
+        ->assertJsonPath('plan.id', $plan->id)
+        ->assertJsonPath('plan.is_active', false);
+
+    $this->assertDatabaseHas('membership_plans', [
+        'id' => $plan->id,
+        'name' => $name,
+        'is_active' => false,
+    ]);
+})->with([
+    'One Month Plan' => ['One Month Plan', 30, 'membership'],
+    '1 Month' => ['1 Month', 30, 'membership'],
+    'Three Months Plan' => ['Three Months Plan', 90, 'membership'],
+    '3 Months' => ['3 Months', 90, 'membership'],
+    'Six Months Plan' => ['Six Months Plan', 180, 'membership'],
+    '6 Months' => ['6 Months', 180, 'membership'],
+    'Twelve Months Plan' => ['Twelve Months Plan', 360, 'membership'],
+    '12 Months' => ['12 Months', 360, 'membership'],
+    'Class Plan' => ['Class Plan', 30, 'class'],
+    'Class' => ['Class', 30, 'class'],
+]);
+
+it('keeps subscriptions and history linked after archiving a plan through the API', function () {
+    $member = User::factory()->create(['role' => 'user']);
+    $plan = MembershipPlan::create([
+        'name' => 'Built-in History Plan',
+        'duration_days' => 30,
+        'price' => 100000,
+        'plan_type' => 'membership',
+        'is_active' => true,
+    ]);
+    $subscription = MemberMembership::create([
+        'member_id' => $member->id,
+        'membership_plan_id' => $plan->id,
+        'discount_percentage' => null,
+        'final_price' => 100000,
+        'start_date' => '2026-11-01',
+        'end_date' => '2026-12-01',
+        'is_expired' => false,
+        'is_on_hold' => false,
+        'hold_started_at' => null,
+    ]);
+
+    $this->deleteJson("/api/membership-plans/{$plan->id}")
+        ->assertOk()
+        ->assertJsonPath('plan.is_active', false);
+
+    $this->assertDatabaseHas('member_memberships', [
+        'id' => $subscription->id,
+        'membership_plan_id' => $plan->id,
+    ]);
+    expect($subscription->fresh()->plan?->name)->toBe('Built-in History Plan');
 });
 
 it('excludes archived plans from options and rejects them for new subscriptions', function () {
@@ -209,6 +280,8 @@ it('uses legacy pricing for null plan prices and preserves archived plan history
 });
 
 it('keeps legacy pricing endpoints compatible and syncs existing plans without activating or creating them', function () {
+    MembershipPlan::query()->where('name', 'Class')->delete();
+
     $plan = MembershipPlan::create([
         'name' => '1 Month',
         'duration_days' => 30,
@@ -219,7 +292,10 @@ it('keeps legacy pricing endpoints compatible and syncs existing plans without a
 
     $this->putJson('/api/pricing/one-month', ['one_month_subscription_price' => 125000])
         ->assertOk()
-        ->assertJsonPath('pricing.one_month_subscription_price', '125000.00');
+        ->assertJsonPath(
+            'pricing.one_month_subscription_price',
+            fn ($price) => (float) $price === 125000.0,
+        );
 
     $plan->refresh();
     expect((float) $plan->price)->toBe(125000.0)

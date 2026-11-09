@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\RfidAttendance;
 use App\Models\Point;
+use App\Models\RfidAttendance;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -69,7 +69,7 @@ class RfidAttendanceController extends Controller
             ->where('card_id', $validated['card_id'])
             ->first();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'message' => 'Card not registered.',
             ], 404);
@@ -81,11 +81,11 @@ class RfidAttendanceController extends Controller
         $result = DB::transaction(function () use ($user, $now, $today) {
             $attendance = RfidAttendance::query()
                 ->where('user_id', $user->id)
-                ->where('attendance_date', $today)
+                ->whereDate('attendance_date', $today)
                 ->lockForUpdate()
                 ->first();
 
-            if (!$attendance) {
+            if (! $attendance) {
                 $attendance = RfidAttendance::create([
                     'user_id' => $user->id,
                     'attendance_date' => $today,
@@ -99,7 +99,7 @@ class RfidAttendanceController extends Controller
                 ];
             }
 
-            if (!$attendance->check_out_time) {
+            if (! $attendance->check_out_time) {
                 if (
                     $attendance->check_in_time
                     && $attendance->check_in_time->diffInMilliseconds($now) < 2000
@@ -142,7 +142,7 @@ class RfidAttendanceController extends Controller
                     'name' => $user->name,
                     'role' => $user->role,
                     'card_id' => $user->card_id,
-                    ],
+                ],
                 'attendance' => [
                     'action' => $result['action'],
                     'check_in_time' => $result['attendance']->check_in_time?->toIso8601String(),

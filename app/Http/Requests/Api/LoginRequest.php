@@ -29,11 +29,22 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         $captchaLength = config('captcha.default.length', 6);
+        $captchaKey = (string) $this->input('captcha_key');
 
         return [
             'identifier' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
-            //'captcha'  => ['required', 'captcha', "digits:{$captchaLength}"],
+            'captcha_key' => ['required', 'string', 'max:255'],
+            'captcha' => [
+                'bail',
+                'required',
+                "digits:{$captchaLength}",
+                function (string $attribute, mixed $value, \Closure $fail) use ($captchaKey): void {
+                    if ($captchaKey === '' || ! captcha_api_check((string) $value, $captchaKey)) {
+                        $fail('Invalid or expired captcha. Please try again.');
+                    }
+                },
+            ],
         ];
     }
 
@@ -45,8 +56,9 @@ class LoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'captcha.captcha' => 'Invalid captcha. Please try again.',
+            'captcha.required' => 'Captcha is required.',
             'captcha.digits' => 'Captcha must be numbers only.',
+            'captcha_key.required' => 'Captcha has expired. Please refresh and try again.',
         ];
     }
 
@@ -56,6 +68,7 @@ class LoginRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $identifier = $this->input('identifier');
+        $captchaKey = $this->input('captcha_key') ?? $this->input('captchaKey') ?? $this->input('key');
 
         if (! $identifier) {
             $identifier = $this->input('email') ?? $this->input('phone');
@@ -69,6 +82,12 @@ class LoginRequest extends FormRequest
             }
             $this->merge([
                 'identifier' => $normalized,
+            ]);
+        }
+
+        if ($captchaKey !== null) {
+            $this->merge([
+                'captcha_key' => trim((string) $captchaKey),
             ]);
         }
     }
@@ -181,7 +200,7 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->loginIdentifier()) . '|login|' . $this->ip());
+        return Str::transliterate(Str::lower($this->loginIdentifier()).'|login|'.$this->ip());
     }
 
     public function loginIdentifier(): string

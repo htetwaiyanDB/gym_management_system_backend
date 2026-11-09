@@ -12,13 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('trainer_pricing', function (Blueprint $table) {
-            $table->dropForeign('trainer_pricing_trainer_id_foreign');
+            $table->dropForeign(['trainer_id']);
             $table->foreign('trainer_id')->references('id')->on('users')->cascadeOnDelete();
         });
 
         Schema::table('trainer_bookings', function (Blueprint $table) {
-            $table->dropForeign('trainer_bookings_member_id_foreign');
-            $table->dropForeign('trainer_bookings_trainer_id_foreign');
+            $table->dropForeign(['member_id']);
+            $table->dropForeign(['trainer_id']);
             $table->foreign('member_id')->references('id')->on('users')->cascadeOnDelete();
             $table->foreign('trainer_id')->references('id')->on('users')->cascadeOnDelete();
         });
@@ -30,13 +30,13 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('trainer_pricing', function (Blueprint $table) {
-            $table->dropForeign('trainer_pricing_trainer_id_foreign');
+            $table->dropForeign(['trainer_id']);
             $table->foreign('trainer_id')->references('id')->on('trainers')->cascadeOnDelete();
         });
 
         Schema::table('trainer_bookings', function (Blueprint $table) {
-            $table->dropForeign('trainer_bookings_member_id_foreign');
-            $table->dropForeign('trainer_bookings_trainer_id_foreign');
+            $table->dropForeign(['member_id']);
+            $table->dropForeign(['trainer_id']);
             $table->foreign('member_id')->references('id')->on('members')->cascadeOnDelete();
             $table->foreign('trainer_id')->references('id')->on('trainers')->cascadeOnDelete();
         });
