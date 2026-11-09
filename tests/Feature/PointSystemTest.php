@@ -14,96 +14,80 @@ it('awards 50 points only once per day after first check-out', function () {
 
     Sanctum::actingAs($admin);
 
-    $this->postJson('/api/attendance/scan', [
-        'user_id' => $member->id,
-        'qr_type' => 'user',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
+    Carbon::setTestNow(now());
 
-    $this->postJson('/api/attendance/scan', [
+    $member->update(['card_id' => 'RFID-0001']);
+
+    $this->postJson('/api/attendance/rfid/scan', [
+        'card_id' => 'RFID-0001',
+    ])->assertOk()->assertJsonPath('attendance.action', 'check_in');
+
+    Carbon::setTestNow(now()->addSeconds(2));
+
+    $this->postJson('/api/attendance/rfid/scan', [
+        'card_id' => 'RFID-0001',
+    ])->assertOk()->assertJsonPath('attendance.action', 'check_out');
+
+    expect(Point::where('user_id', $member->id)->value('point'))->toBe(50);
+
+    $this->assertDatabaseMissing('attendance_scans', [
         'user_id' => $member->id,
-        'qr_type' => 'user',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
+    ]);
+
+    Carbon::setTestNow(now()->addSeconds(2));
+
+    $this->postJson('/api/attendance/rfid/scan', [
+        'card_id' => 'RFID-0001',
+    ])->assertOk()->assertJsonPath('attendance.action', 'already_checked_out');
 
     expect(Point::where('user_id', $member->id)->value('point'))->toBe(50);
 
-    $this->postJson('/api/attendance/scan', [
-        'user_id' => $member->id,
-        'qr_type' => 'user',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
-
-    $this->postJson('/api/attendance/scan', [
-        'user_id' => $member->id,
-        'qr_type' => 'user',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
-
-    expect(Point::where('user_id', $member->id)->value('point'))->toBe(50);
+    Carbon::setTestNow();
 });
 
-
-it('awards user scan points on first check-out only for the day', function () {
+it('returns gone for retired QR and manual attendance endpoints', function () {
+    $admin = User::factory()->create(['role' => 'administrator']);
     $member = User::factory()->create(['role' => 'user']);
-
-    cache()->forever('attendance_qr_token_user', 'user-token');
-    Sanctum::actingAs($member);
-
-    $this->postJson('/api/user/check-in/scan', [
-        'token' => 'user-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
-
-    $this->postJson('/api/user/check-in/scan', [
-        'token' => 'user-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
-
-    $this->assertDatabaseHas('points', [
-        'user_id' => $member->id,
-        'point' => 50,
-    ]);
-
-    $this->postJson('/api/user/check-in/scan', [
-        'token' => 'user-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
-
-    $this->postJson('/api/user/check-in/scan', [
-        'token' => 'user-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
-
-    $this->assertDatabaseHas('points', [
-        'user_id' => $member->id,
-        'point' => 50,
-    ]);
-});
-
-it('awards trainer scan points on first check-out only for the day', function () {
     $trainer = User::factory()->create(['role' => 'trainer']);
 
-    cache()->forever('attendance_qr_token_trainer', 'trainer-token');
+    Sanctum::actingAs($admin);
+
+    $this->postJson('/api/attendance/scan', [
+        'user_id' => $member->id,
+        'qr_type' => 'user',
+    ])->assertStatus(410);
+
+    $this->postJson('/api/attendance/scan/qr?type=user&token=legacy', [])
+        ->assertStatus(410);
+
+    Sanctum::actingAs($member);
+    $this->postJson('/api/user/check-in/scan', [
+        'token' => 'legacy',
+    ])->assertStatus(410);
+
     Sanctum::actingAs($trainer);
-
     $this->postJson('/api/trainer/check-in/scan', [
-        'token' => 'trainer-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
+        'token' => 'legacy',
+    ])->assertStatus(410);
+});
 
-    $this->postJson('/api/trainer/check-in/scan', [
-        'token' => 'trainer-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
-
-    $this->assertDatabaseHas('points', [
-        'user_id' => $trainer->id,
-        'point' => 50,
+it('keeps the attendance user list available for RFID card registration', function () {
+    $admin = User::factory()->create(['role' => 'administrator']);
+    $member = User::factory()->create([
+        'role' => 'user',
+        'card_id' => 'RFID-REGISTRATION-LIST',
     ]);
 
-    $this->postJson('/api/trainer/check-in/scan', [
-        'token' => 'trainer-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_in');
+    Sanctum::actingAs($admin);
 
-    $this->postJson('/api/trainer/check-in/scan', [
-        'token' => 'trainer-token',
-    ])->assertOk()->assertJsonPath('record.action', 'check_out');
-
-    $this->assertDatabaseHas('points', [
-        'user_id' => $trainer->id,
-        'point' => 50,
-    ]);
+    $this->getJson('/api/attendance/users')
+        ->assertOk()
+        ->assertJsonFragment([
+            'id' => $member->id,
+            'name' => $member->name,
+            'role' => 'user',
+            'card_id' => 'RFID-REGISTRATION-LIST',
+        ]);
 });
 
 it('awards rfid scan points on check-out and creates a points row when missing', function () {

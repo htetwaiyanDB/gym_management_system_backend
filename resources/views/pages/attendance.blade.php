@@ -10,27 +10,17 @@
             <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 text-gray-900 dark:text-gray-100 space-y-6">
                     <div>
-                        <h3 class="text-lg font-semibold">Attendance Center</h3>
+                        <h3 class="text-lg font-semibold">RFID Attendance Center</h3>
                         <p class="text-sm text-gray-600 dark:text-gray-300">
-                            Track trainer attendance, scan QR codes, and monitor active gym users.
+                            Attendance records, active check-ins, and reporting now come from RFID attendance only.
                         </p>
                     </div>
 
-                    <div class="border-b border-gray-200 dark:border-gray-700">
-                        <nav class="-mb-px flex flex-wrap gap-6" aria-label="Attendance tabs">
-                            <button type="button" data-tab="records" class="attendance-tab border-emerald-500 text-emerald-600 dark:text-emerald-400 whitespace-nowrap border-b-2 py-2 text-sm font-semibold">
-                                Attendance Records
-                            </button>
-                            <button type="button" data-tab="qr-codes" class="attendance-tab border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100 hover:border-gray-300 whitespace-nowrap border-b-2 py-2 text-sm font-semibold">
-                                QR Codes
-                            </button>
-                            <button type="button" data-tab="checked-in" class="attendance-tab border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100 hover:border-gray-300 whitespace-nowrap border-b-2 py-2 text-sm font-semibold">
-                                Checked-in Users
-                            </button>
-                        </nav>
+                    <div class="rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-5 text-sm text-emerald-900 dark:text-emerald-100">
+                        QR and manual attendance flows have been retired from production. Use RFID card registration and `/api/attendance/rfid/scan` for all attendance writes.
                     </div>
 
-                    <section id="attendance-records" class="attendance-panel space-y-6">
+                    <section class="space-y-6">
                         <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-5">
                             <div class="flex flex-col gap-4 lg:flex-row lg:items-end">
                                 <div class="flex-1">
@@ -62,13 +52,14 @@
                                             <th class="px-4 py-3 text-left font-semibold">Role</th>
                                             <th class="px-4 py-3 text-left font-semibold">Action</th>
                                             <th class="px-4 py-3 text-left font-semibold">Timestamp</th>
-                                            <th class="px-4 py-3 text-left font-semibold">Total Check-in Days</th>
+                                            <th class="px-4 py-3 text-left font-semibold">Source</th>
+                                            <th class="px-4 py-3 text-left font-semibold">Trainer Working Days</th>
                                         </tr>
                                     </thead>
                                     <tbody id="attendance-table" class="divide-y divide-gray-200 dark:divide-gray-700">
                                         <tr>
-                                            <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                                                Use the filters above to search for attendance records.
+                                            <td colspan="6" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                                Use the filters above to search RFID attendance records.
                                             </td>
                                         </tr>
                                     </tbody>
@@ -77,109 +68,12 @@
                         </div>
                     </section>
 
-                    <section id="attendance-qr-codes" class="attendance-panel hidden space-y-6">
-                        <div class="flex items-center justify-between gap-4">
-                            <div>
-                                <h3 class="text-lg font-semibold">Gym QR Codes</h3>
-                                <p class="text-sm text-gray-600 dark:text-gray-300">
-                                    Share these codes for members and trainers to scan on entry or exit.
-                                </p>
-                            </div>
-                            <button type="button" id="qr-refresh-button" class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-dark rounded-md text-sm font-semibold hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800">
-                                Refresh QR Codes
-                            </button>
-                        </div>
-                        <div class="grid gap-6 md:grid-cols-2">
-                            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
-                                <div>
-                                    <h4 class="text-lg font-semibold">Member QR Code</h4>
-                                    <p class="text-sm text-gray-600 dark:text-gray-300">
-                                        Members scan this QR to check in and check out each day.
-                                    </p>
-                                </div>
-                                <div class="flex items-center justify-center">
-                                    <img
-                                        id="member-qr-image"
-                                        class="h-40 w-40 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-                                        src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ urlencode($userQrData) }}"
-                                        alt="Member QR code"
-                                    >
-                                </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 break-all">
-                                    <span class="font-semibold text-gray-700 dark:text-gray-200">Scan link:</span>
-                                    <span id="member-qr-link">{{ $userQrData }}</span>
-                                </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400">
-                                    Scan twice daily (in/out) to record attendance.
-                                </div>
-                            </div>
-
-                            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
-                                <div>
-                                    <h4 class="text-lg font-semibold">Trainer QR Code</h4>
-                                    <p class="text-sm text-gray-600 dark:text-gray-300">
-                                        Trainers scan this QR for working day tracking and payroll.
-                                    </p>
-                                </div>
-                                <div class="flex items-center justify-center">
-                                    <img
-                                        id="trainer-qr-image"
-                                        class="h-40 w-40 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-                                        src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ urlencode($trainerQrData) }}"
-                                        alt="Trainer QR code"
-                                    >
-                                </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 break-all">
-                                    <span class="font-semibold text-gray-700 dark:text-gray-200">Scan link:</span>
-                                    <span id="trainer-qr-link">{{ $trainerQrData }}</span>
-                                </div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400">
-                                    A working day is counted when two scans are recorded.
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-6 space-y-4">
-                            <div>
-                                <h4 class="text-lg font-semibold text-amber-900 dark:text-amber-100">Admin Scan Override</h4>
-                                <p class="text-sm text-gray-600 dark:text-gray-300">
-                                   Use this form only if someone cannot scan the QR. Scanning the QR will now record check-ins automatically.
-                                </p>
-                            </div>
-                            <div id="scan-message" class="rounded-md bg-gray-50 dark:bg-gray-900 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                Select a QR type and user, then submit to record a scan.
-                            </div>
-                            <form id="scan-form" class="grid gap-4 md:grid-cols-3">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="scan-qr-type">QR Type</label>
-                                    <select id="scan-qr-type" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                                        <option value="user">Member</option>
-                                        <option value="trainer">Trainer</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="scan-user">User</label>
-                                    <select id="scan-user" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                                        @foreach ($users as $user)
-                                            <option value="{{ $user->id }}" data-role="{{ $user->role }}">{{ $user->name }} ({{ ucfirst($user->role) }})</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="flex items-end">
-                                    <button type="submit" class="inline-flex items-center justify-center w-full px-5 py-2 bg-emerald-600 text-white rounded-md text-sm font-semibold hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800">
-                                        Record Scan
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </section>
-
-                    <section id="attendance-checked-in" class="attendance-panel hidden space-y-6">
+                    <section class="space-y-6">
                         <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-5">
                             <div class="flex flex-col gap-2">
                                 <h4 class="text-lg font-semibold">Checked-in Users</h4>
                                 <p class="text-sm text-gray-600 dark:text-gray-300">
-                                    Compare active check-ins with the total number of members to spot missing users.
+                                    Active users are people whose RFID check-in exists for today and whose check-out has not been recorded yet.
                                 </p>
                                 <div class="flex flex-wrap gap-3 text-sm text-gray-700 dark:text-gray-200">
                                     <span class="rounded-full bg-white dark:bg-gray-800 px-3 py-1">Total members: <strong id="total-members">{{ $totalMembers }}</strong></span>
@@ -196,13 +90,14 @@
                                             <th class="px-4 py-3 text-left font-semibold">Username</th>
                                             <th class="px-4 py-3 text-left font-semibold">Role</th>
                                             <th class="px-4 py-3 text-left font-semibold">Last Scan</th>
+                                            <th class="px-4 py-3 text-left font-semibold">Source</th>
                                             <th class="px-4 py-3 text-left font-semibold">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody id="checked-in-table" class="divide-y divide-gray-200 dark:divide-gray-700">
                                         <tr>
-                                            <td colspan="4" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                                                No active check-ins yet.
+                                            <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                                No active RFID check-ins yet.
                                             </td>
                                         </tr>
                                     </tbody>
@@ -216,33 +111,15 @@
     </div>
 
     <script>
-        const tabs = document.querySelectorAll('.attendance-tab');
-        const panels = {
-            records: document.getElementById('attendance-records'),
-            'qr-codes': document.getElementById('attendance-qr-codes'),
-            'checked-in': document.getElementById('attendance-checked-in'),
-        };
-
         const attendanceTable = document.getElementById('attendance-table');
         const usernameInput = document.getElementById('attendance-username');
         const startDateInput = document.getElementById('attendance-start');
         const endDateInput = document.getElementById('attendance-end');
         const filterButton = document.getElementById('attendance-filter');
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        const attendanceUsers = @json($users);
-        const scanForm = document.getElementById('scan-form');
-        const scanQrType = document.getElementById('scan-qr-type');
-        const scanUser = document.getElementById('scan-user');
-        const scanMessage = document.getElementById('scan-message');
         const totalMembers = document.getElementById('total-members');
         const activeMembers = document.getElementById('active-members');
         const checkedInTable = document.getElementById('checked-in-table');
-        const refreshQrButton = document.getElementById('qr-refresh-button');
-        const memberQrImage = document.getElementById('member-qr-image');
-        const trainerQrImage = document.getElementById('trainer-qr-image');
-        const memberQrLink = document.getElementById('member-qr-link');
-        const trainerQrLink = document.getElementById('trainer-qr-link');
-        const qrBaseUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=';
+
         const formatTimestamp = (isoString) => {
             const date = new Date(isoString);
             return date.toLocaleString('en-US', {
@@ -258,8 +135,8 @@
             if (!records.length) {
                 attendanceTable.innerHTML = `
                     <tr>
-                        <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                            No attendance records found for the selected filters.
+                        <td colspan="6" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                            No RFID attendance records found for the selected filters.
                         </td>
                     </tr>
                 `;
@@ -272,6 +149,7 @@
                     <td class="px-4 py-3 capitalize">${record.role}</td>
                     <td class="px-4 py-3">${record.action.replace('_', ' ')}</td>
                     <td class="px-4 py-3">${formatTimestamp(record.timestamp)}</td>
+                    <td class="px-4 py-3 uppercase">${record.source}</td>
                     <td class="px-4 py-3 font-semibold">${record.total_check_in_days}</td>
                 </tr>
             `).join('');
@@ -284,8 +162,8 @@
             if (!data.active_users.length) {
                 checkedInTable.innerHTML = `
                     <tr>
-                        <td colspan="4" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                            No active check-ins yet.
+                        <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                            No active RFID check-ins yet.
                         </td>
                     </tr>
                 `;
@@ -297,6 +175,7 @@
                     <td class="px-4 py-3">${user.username}</td>
                     <td class="px-4 py-3 capitalize">${user.role}</td>
                     <td class="px-4 py-3">${formatTimestamp(user.last_scan)}</td>
+                    <td class="px-4 py-3 uppercase">${user.source}</td>
                     <td class="px-4 py-3">
                         <span class="rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100 px-3 py-1 text-xs font-semibold">
                             ${user.status}
@@ -333,127 +212,8 @@
             renderCheckedIn(data);
         };
 
-        const setScanMessage = (message, type = 'info') => {
-            const base = 'rounded-md px-4 py-3 text-sm ';
-            const styles = {
-                info: 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200',
-                success: 'bg-emerald-50 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-100',
-                error: 'bg-rose-50 dark:bg-rose-900 text-rose-700 dark:text-rose-100',
-            };
-            scanMessage.className = base + (styles[type] || styles.info);
-            scanMessage.textContent = message;
-        };
-
-        const filterUsersByRole = () => {
-            const role = scanQrType.value;
-            const options = attendanceUsers.filter((user) => user.role === role);
-            if (!options.length) {
-                scanUser.innerHTML = '<option value="">No users available</option>';
-                scanUser.setAttribute('disabled', 'disabled');
-                return;
-            }
-
-            scanUser.removeAttribute('disabled');
-            scanUser.innerHTML = options.map((user) => `
-                <option value="${user.id}" data-role="${user.role}">${user.name} (${user.role})</option>
-            `).join('');
-        };
-
-        tabs.forEach((tab) => {
-            tab.addEventListener('click', () => {
-                const target = tab.dataset.tab;
-                tabs.forEach((item) => {
-                    item.classList.remove('border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400');
-                    item.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-300');
-                });
-
-                tab.classList.add('border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400');
-                tab.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-300');
-
-                Object.entries(panels).forEach(([key, panel]) => {
-                    if (key === target) {
-                        panel.classList.remove('hidden');
-                    } else {
-                        panel.classList.add('hidden');
-                    }
-                });
-            });
-        });
-
         filterButton.addEventListener('click', fetchAttendance);
 
-        scanForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
-
-            if (scanUser.hasAttribute('disabled')) {
-                setScanMessage('No users available for the selected QR type.', 'error');
-                return;
-            }
-
-            setScanMessage('Recording scan...', 'info');
-
-            const payload = {
-                user_id: scanUser.value,
-                qr_type: scanQrType.value,
-            };
-
-            const response = await fetch(`{{ route('attendance.scan') }}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                setScanMessage(data.message || 'Unable to record scan.', 'error');
-                return;
-            }
-
-            setScanMessage(data.message, 'success');
-            fetchAttendance();
-            fetchCheckedIn();
-        });
-
-        refreshQrButton.addEventListener('click', async () => {
-            refreshQrButton.disabled = true;
-            refreshQrButton.textContent = 'Refreshing...';
-
-            try {
-                const response = await fetch(`{{ route('attendance.qr.refresh') }}`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.message || 'Unable to refresh QR codes.');
-                }
-
-                memberQrLink.textContent = data.user_qr;
-                trainerQrLink.textContent = data.trainer_qr;
-                memberQrImage.src = `${qrBaseUrl}${encodeURIComponent(data.user_qr)}`;
-                trainerQrImage.src = `${qrBaseUrl}${encodeURIComponent(data.trainer_qr)}`;
-            } catch (error) {
-                setScanMessage(error.message, 'error');
-            } finally {
-                refreshQrButton.disabled = false;
-                refreshQrButton.textContent = 'Refresh QR Codes';
-            }
-        });
-
-
-        scanQrType.addEventListener('change', filterUsersByRole);
-
-        filterUsersByRole();
         fetchAttendance();
         fetchCheckedIn();
     </script>

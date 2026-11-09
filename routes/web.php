@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 use App\Models\MemberMembership;
 use App\Models\TrainerBooking;
 use App\Models\User;
-use App\Models\AttendanceScan;
+use App\Models\RfidAttendance;
 use Carbon\Carbon;
 
 /*
@@ -73,14 +73,14 @@ Route::get('/dashboard', function () {
 
     $reportLabels = $reportDays->map(fn ($day) => $day->format('M d'));
 
-    $checkInCounts = $reportDays->map(fn ($day) => AttendanceScan::query()
-        ->whereDate('scanned_at', $day)
-        ->where('action', 'check_in')
+    $checkInCounts = $reportDays->map(fn ($day) => RfidAttendance::query()
+        ->whereDate('attendance_date', $day)
+        ->whereNotNull('check_in_time')
         ->count());
 
-    $checkOutCounts = $reportDays->map(fn ($day) => AttendanceScan::query()
-        ->whereDate('scanned_at', $day)
-        ->where('action', 'check_out')
+    $checkOutCounts = $reportDays->map(fn ($day) => RfidAttendance::query()
+        ->whereDate('attendance_date', $day)
+        ->whereNotNull('check_out_time')
         ->count());
 
 

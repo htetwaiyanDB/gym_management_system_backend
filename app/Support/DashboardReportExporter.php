@@ -2,9 +2,9 @@
 
 namespace App\Support;
 
-use App\Models\AttendanceScan;
 use App\Models\BoxingBooking;
 use App\Models\MemberMembership;
+use App\Models\RfidAttendance;
 use App\Models\TrainerBooking;
 use App\Models\User;
 use DateTimeInterface;
@@ -33,9 +33,13 @@ class DashboardReportExporter
                 ->whereBetween('created_at', [$monthStart, $monthEnd])
                 ->latest('created_at')
                 ->get(),
-            'Attendance Scans' => AttendanceScan::with('user')
-                ->whereBetween('scanned_at', [$monthStart, $monthEnd])
-                ->latest('scanned_at')
+            // Preserve the existing export section name for API compatibility.
+            'Attendance Scans' => RfidAttendance::with('user')
+                ->where(function ($query) use ($monthStart, $monthEnd) {
+                    $query->whereBetween('check_in_time', [$monthStart, $monthEnd])
+                        ->orWhereBetween('check_out_time', [$monthStart, $monthEnd]);
+                })
+                ->latest('attendance_date')
                 ->get(),
             'Monthly Income Summary' => $this->buildMonthlyIncomeSummary(),
         ];

@@ -3,20 +3,23 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Models\AttendanceScan;
 use App\Models\BlogPost;
 use App\Models\Message;
 use App\Models\TrainerBooking;
+use App\Support\RfidAttendanceService;
 use App\Models\User;
 use App\Notifications\NewMessageNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class UserDashboardController extends Controller
 {
+    public function __construct(
+        private readonly RfidAttendanceService $rfidAttendanceService,
+    ) {
+    }
+
     public function home(): View
     {
         $posts = BlogPost::query()
@@ -34,18 +37,9 @@ class UserDashboardController extends Controller
     {
         $user = auth()->user();
 
-        $recentScans = AttendanceScan::query()
-            ->where('user_id', $user->id)
-            ->orderByDesc('scanned_at')
-            ->take(10)
-            ->get();
-
-        $latestScan = $recentScans->first();
-
         return view('user.check_in', [
-            'recentScans' => $recentScans,
-            'latestScan' => $latestScan,
-            'userQrUrl' => $this->qrUrl('user'),
+            'recentScans' => $this->rfidAttendanceService->recentUserActivity($user),
+            'latestScan' => $this->rfidAttendanceService->latestUserStatus($user),
         ]);
     }
 
@@ -128,25 +122,6 @@ class UserDashboardController extends Controller
         return User::query()
             ->where('role', 'administrator')
             ->first();
-    }
-
-    private function qrUrl(string $type): string
-    {
-        $token = $this->getQrToken($type);
-
-        return url('/attendance/scan?type=' . $type . '&token=' . $token);
-    }
-
-    private function getQrToken(string $type): string
-    {
-        $key = $this->qrTokenKey($type);
-
-        return Cache::rememberForever($key, fn () => Str::random(40));
-    }
-
-    private function qrTokenKey(string $type): string
-    {
-        return 'attendance_qr_token_' . $type;
     }
 
     private function shouldNotify(User $user): bool

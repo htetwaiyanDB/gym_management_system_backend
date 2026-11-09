@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\AttendanceScan;
+use App\Models\RfidAttendance;
 use App\Models\TrainerBooking;
 use App\Models\BoxingBooking;
 use App\Models\MemberMembership;
@@ -139,6 +140,11 @@ class User extends Authenticatable
     public function attendances()
     {
         return $this->hasMany(AttendanceScan::class);
+    }
+
+    public function rfidAttendances()
+    {
+        return $this->hasMany(RfidAttendance::class);
     }
 
     public function trainerAssignments()

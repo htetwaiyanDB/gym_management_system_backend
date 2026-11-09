@@ -3,36 +3,32 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\AttendanceScan;
 use App\Models\User;
-use App\Models\Point;
+use App\Support\RfidAttendanceService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
 
 class AttendanceController extends Controller
 {
+    public function __construct(
+        private readonly RfidAttendanceService $rfidAttendanceService,
+    ) {
+    }
+
     public function users(): JsonResponse
     {
         $users = User::query()
             ->whereIn('role', ['user', 'trainer'])
             ->orderBy('name')
-            ->get(['id', 'name', 'role']);
+            ->get(['id', 'name', 'role', 'card_id']);
 
-        return response()->json([
-            'users' => $users,
-        ]);
+        return response()->json(['users' => $users]);
     }
 
     public function qr(): JsonResponse
     {
-        return response()->json([
-            'user_qr' => $this->qrUrl('user'),
-            'trainer_qr' => $this->qrUrl('trainer'),
-        ]);
+        return $this->deprecatedResponse('QR attendance has been retired. RFID is the only supported attendance method.');
     }
 
     public function records(Request $request): JsonResponse
@@ -43,51 +39,51 @@ class AttendanceController extends Controller
             'end_date' => ['nullable', 'date'],
         ]);
 
-        $query = AttendanceScan::query()
-            ->with('user')
-            ->orderByDesc('scanned_at');
-
-        if (!empty($validated['username'])) {
-            $query->whereHas('user', function ($builder) use ($validated) {
-                $builder->where('name', 'like', '%' . $validated['username'] . '%');
-            });
-        }
-
-        if (!empty($validated['start_date'])) {
-            $query->where('scanned_at', '>=', Carbon::parse($validated['start_date'])->startOfDay());
-        }
-
-        if (!empty($validated['end_date'])) {
-            $query->where('scanned_at', '<=', Carbon::parse($validated['end_date'])->endOfDay());
-        }
-
-        $records = $query->get();
+        $records = $this->rfidAttendanceService
+            ->recordsQuery($validated)
+            ->get();
 
         $workingDays = $records
             ->groupBy('user_id')
             ->map(function ($userRecords) {
                 $user = $userRecords->first()?->user;
+
                 if (!$user || $user->role !== 'trainer') {
                     return '-';
                 }
 
                 return $userRecords
-                    ->groupBy(fn ($record) => $record->scanned_at->toDateString())
-                    ->filter(function ($dayRecords) {
-                        return $dayRecords->pluck('action')->unique()->count() >= 2;
-                    })
+                    ->filter(fn ($record) => $record->check_in_time && $record->check_out_time)
                     ->count();
             });
 
-        $payload = $records->map(function ($record) use ($workingDays) {
-            return [
+        $payload = $records->flatMap(function ($record) use ($workingDays) {
+            $base = [
                 'username' => $record->user?->name ?? 'Unknown',
                 'role' => $record->user?->role ?? 'user',
-                'action' => $record->action,
-                'timestamp' => $record->scanned_at->toIso8601String(),
                 'total_check_in_days' => $workingDays[$record->user_id] ?? '-',
+                'attendance_date' => $record->attendance_date?->toDateString(),
+                'source' => $record->source,
             ];
-        });
+
+            $events = [];
+
+            if ($record->check_in_time) {
+                $events[] = $base + [
+                    'action' => 'check_in',
+                    'timestamp' => $record->check_in_time->toIso8601String(),
+                ];
+            }
+
+            if ($record->check_out_time) {
+                $events[] = $base + [
+                    'action' => 'check_out',
+                    'timestamp' => $record->check_out_time->toIso8601String(),
+                ];
+            }
+
+            return $events;
+        })->sortByDesc('timestamp')->values();
 
         return response()->json([
             'records' => $payload,
@@ -98,27 +94,18 @@ class AttendanceController extends Controller
     {
         $today = Carbon::today();
 
-        $todayScans = AttendanceScan::query()
-            ->with('user')
-            ->whereDate('scanned_at', $today)
-            ->orderBy('scanned_at')
-            ->get();
-
-        $latestByUser = $todayScans
-            ->groupBy('user_id')
-            ->map(fn ($records) => $records->last());
-
-        $activeUsers = $latestByUser
-            ->filter(fn ($record) => $record && $record->action === 'check_in')
-            ->values()
-            ->map(function ($record) {
+        $activeUsers = $this->rfidAttendanceService
+            ->activeUsers($today)
+            ->map(function ($attendance) {
                 return [
-                    'username' => $record->user?->name ?? 'Unknown',
-                    'role' => $record->user?->role ?? 'user',
-                    'last_scan' => $record->scanned_at->toIso8601String(),
+                    'username' => $attendance->user?->name ?? 'Unknown',
+                    'role' => $attendance->user?->role ?? 'user',
+                    'last_scan' => $attendance->check_in_time?->toIso8601String(),
                     'status' => 'Active',
+                    'source' => $attendance->source,
                 ];
-            });
+            })
+            ->values();
 
         $totalMembers = User::query()
             ->where('role', 'user')
@@ -133,163 +120,23 @@ class AttendanceController extends Controller
 
     public function scan(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'user_id' => [
-                'required',
-                Rule::exists('users', 'id')->where(fn ($query) => $query->whereIn('role', ['user', 'trainer'])),
-            ],
-            'qr_type' => ['required', Rule::in(['user', 'trainer'])],
-        ]);
-
-        $user = User::query()->findOrFail($validated['user_id']);
-
-        if ($user->role !== $validated['qr_type']) {
-            return response()->json([
-                'message' => 'Selected user role does not match the QR code type.',
-            ], 422);
-        }
-
-        $scan = $this->recordScan($user);
-
-        return response()->json([
-            'message' => 'Scan recorded successfully.',
-            'record' => [
-                'username' => $user->name,
-                'role' => $user->role,
-                'action' => $scan->action,
-                'timestamp' => $scan->scanned_at->toIso8601String(),
-            ],
-        ]);
+        return $this->deprecatedResponse('Manual attendance has been retired. Use /api/attendance/rfid/scan for all attendance writes.');
     }
 
     public function scanFromQr(Request $request): JsonResponse
     {
-        $type = $request->query('type');
-        $token = $request->query('token');
-
-        if (!in_array($type, ['user', 'trainer'], true)) {
-            return response()->json([
-                'message' => 'Invalid QR code type.',
-            ], 422);
-        }
-
-        if (!$this->tokenMatches($type, $token)) {
-            return response()->json([
-                'message' => 'This QR code has expired. Please refresh and try again.',
-            ], 422);
-        }
-
-        $user = $request->user();
-
-        if (!$user || !in_array($user->role, ['user', 'trainer'], true)) {
-            return response()->json([
-                'message' => 'Unable to record attendance for this account.',
-            ], 422);
-        }
-
-        if ($user->role !== $type) {
-            return response()->json([
-                'message' => 'Your account does not match this QR code type.',
-            ], 422);
-        }
-
-        $scan = $this->recordScan($user);
-
-        return response()->json([
-            'message' => $scan->action === 'check_in'
-                ? 'Check-in recorded successfully.'
-                : 'Check-out recorded successfully.',
-            'record' => [
-                'username' => $user->name,
-                'role' => $user->role,
-                'action' => $scan->action,
-                'timestamp' => $scan->scanned_at->toIso8601String(),
-            ],
-        ]);
+        return $this->deprecatedResponse('QR attendance has been retired. Use RFID card scans for all attendance writes.');
     }
 
     public function refreshQr(): JsonResponse
     {
-        $userToken = $this->getQrToken('user', true);
-        $trainerToken = $this->getQrToken('trainer', true);
+        return $this->deprecatedResponse('QR attendance has been retired. RFID is the only supported attendance method.');
+    }
 
+    private function deprecatedResponse(string $message): JsonResponse
+    {
         return response()->json([
-            'user_qr' => url('/attendance/scan?type=user&token=' . $userToken),
-            'trainer_qr' => url('/attendance/scan?type=trainer&token=' . $trainerToken),
-        ]);
-    }
-
-    private function recordScan(User $user): AttendanceScan
-    {
-        $today = Carbon::today();
-
-        $lastScan = AttendanceScan::query()
-            ->where('user_id', $user->id)
-            ->whereDate('scanned_at', $today)
-            ->orderByDesc('scanned_at')
-            ->first();
-
-        $hasCheckedOutToday = AttendanceScan::query()
-            ->where('user_id', $user->id)
-            ->where('action', 'check_out')
-            ->whereDate('scanned_at', $today)
-            ->exists();
-
-        $nextAction = $lastScan && $lastScan->action === 'check_in'
-            ? 'check_out'
-            : 'check_in';
-
-        $scan = AttendanceScan::create([
-            'user_id' => $user->id,
-            'action' => $nextAction,
-            'scanned_at' => Carbon::now(),
-        ]);
-
-        if ($nextAction === 'check_out' && !$hasCheckedOutToday) {
-            $point = Point::firstOrCreate(
-                ['user_id' => $user->id],
-                ['point' => 0],
-            );
-
-            $point->increment('point', 50);
-        }
-
-        return $scan;
-    }
-
-        private function qrUrl(string $type): string
-    {
-        $token = $this->getQrToken($type);
-
-        return url('/attendance/scan?type=' . $type . '&token=' . $token);
-    }
-
-    private function getQrToken(string $type, bool $refresh = false): string
-    {
-        $key = $this->qrTokenKey($type);
-
-        if ($refresh) {
-            $token = Str::random(40);
-            Cache::forever($key, $token);
-            return $token;
-        }
-
-        return Cache::rememberForever($key, fn () => Str::random(40));
-    }
-
-    private function qrTokenKey(string $type): string
-    {
-        return 'attendance_qr_token_' . $type;
-    }
-
-    private function tokenMatches(string $type, ?string $token): bool
-    {
-        if (!$token) {
-            return false;
-        }
-
-        $expected = Cache::get($this->qrTokenKey($type));
-
-        return $expected && hash_equals($expected, $token);
+            'message' => $message,
+        ], 410);
     }
 }

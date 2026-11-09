@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\AttendanceScan;
 use App\Models\User;
 use App\Models\MemberMembership;
 use App\Models\TrainerBooking;
 use App\Models\BoxingBooking;
+use App\Support\RfidAttendanceService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +15,11 @@ use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    public function __construct(
+        private readonly RfidAttendanceService $rfidAttendanceService,
+    ) {
+    }
+
     public function attendanceReport(Request $request): JsonResponse
     {
         $period = $request->query('period', '7days');
@@ -41,50 +46,21 @@ class DashboardController extends Controller
 
         $labels = $reportDays->map(fn ($day) => $day->format('M d'));
 
-        $checkIns = $reportDays->map(fn ($day) => AttendanceScan::query()
-            ->whereDate('scanned_at', $day)
-            ->where('action', 'check_in')
-            ->count());
-
-        $checkOuts = $reportDays->map(fn ($day) => AttendanceScan::query()
-            ->whereDate('scanned_at', $day)
-            ->where('action', 'check_out')
-            ->count());
+        $checkIns = $reportDays->map(fn ($day) => $this->rfidAttendanceService->countByActionForDay($day, 'check_in'));
+        $checkOuts = $reportDays->map(fn ($day) => $this->rfidAttendanceService->countByActionForDay($day, 'check_out'));
 
         $today = Carbon::today();
 
-        $activeCheckIns = AttendanceScan::query()
-            ->whereDate('scanned_at', $today)
-            ->orderBy('scanned_at')
-            ->get(['user_id', 'action'])
-            ->groupBy('user_id')
-            ->map(fn ($records) => $records->last())
-            ->filter(fn ($record) => $record && $record->action === 'check_in')
-            ->count();
+        $activeCheckIns = $this->rfidAttendanceService->activeUsers($today)->count();
 
         $totalMembers = User::query()
             ->where('role', 'user')
             ->count();
 
-        $todayCheckIns = AttendanceScan::query()
-            ->whereDate('scanned_at', $today)
-            ->where('action', 'check_in')
-            ->count();
-
-        $todayCheckOuts = AttendanceScan::query()
-            ->whereDate('scanned_at', $today)
-            ->where('action', 'check_out')
-            ->count();
-
-        $rangeCheckIns = AttendanceScan::query()
-            ->whereBetween('scanned_at', [$rangeStart, $rangeEnd])
-            ->where('action', 'check_in')
-            ->count();
-
-        $rangeCheckOuts = AttendanceScan::query()
-            ->whereBetween('scanned_at', [$rangeStart, $rangeEnd])
-            ->where('action', 'check_out')
-            ->count();
+        $todayCheckIns = $this->rfidAttendanceService->countByActionForDay($today, 'check_in');
+        $todayCheckOuts = $this->rfidAttendanceService->countByActionForDay($today, 'check_out');
+        $rangeCheckIns = $this->rfidAttendanceService->countByActionForRange($rangeStart, $rangeEnd, 'check_in');
+        $rangeCheckOuts = $this->rfidAttendanceService->countByActionForRange($rangeStart, $rangeEnd, 'check_out');
 
         return response()->json([
             'period' => $period,
