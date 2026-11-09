@@ -7,6 +7,7 @@ use App\Models\AttendanceScan;
 use App\Models\BlogPost;
 use App\Models\Message;
 use App\Models\MemberMembership;
+use App\Models\MembershipPlan;
 use App\Models\Point;
 use App\Models\TrainerBooking;
 use App\Models\BoxingBooking;
@@ -117,7 +118,9 @@ class UserController extends Controller
         return response()->json([
             'subscriptions' => $subscriptions->map(function (MemberMembership $subscription) use ($pricingSetting, $today) {
                 $durationDays = $subscription->plan?->duration_days ?? 0;
-                $price = $this->resolvePlanPrice($subscription->plan?->name, $durationDays, $pricingSetting);
+                $price = $subscription->plan
+                    ? $this->resolvePlanPrice($subscription->plan, $pricingSetting)
+                    : null;
                 $discountPercentage = $subscription->discount_percentage !== null
                     ? (float) $subscription->discount_percentage
                     : null;
@@ -344,13 +347,31 @@ class UserController extends Controller
         ];
     }
 
-    private function resolvePlanPrice(?string $planName, ?int $durationDays, ?PricingSetting $pricingSetting): ?float
+    private function resolvePlanPrice(MembershipPlan $plan, ?PricingSetting $pricingSetting): ?float
     {
+        if ($plan->price !== null) {
+            return (float) $plan->price;
+        }
+
+        $durationDays = $plan->duration_days;
+
         if (! $pricingSetting || ! $durationDays) {
             return null;
         }
 
-        if ($planName === self::CLASS_PLAN_NAME) {
+        if ($plan->plan_type === 'class' || $plan->name === self::CLASS_PLAN_NAME) {
+            if ($durationDays >= 360 && $pricingSetting->class_twelve_month_price !== null) {
+                return (float) $pricingSetting->class_twelve_month_price;
+            }
+
+            if ($durationDays >= 180 && $pricingSetting->class_six_month_price !== null) {
+                return (float) $pricingSetting->class_six_month_price;
+            }
+
+            if ($durationDays >= 90 && $pricingSetting->class_three_month_price !== null) {
+                return (float) $pricingSetting->class_three_month_price;
+            }
+
             return (float) $pricingSetting->class_subscription_price;
         }
 

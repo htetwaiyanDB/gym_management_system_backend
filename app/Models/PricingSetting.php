@@ -12,5 +12,8 @@ class PricingSetting extends Model
         'quarterly_subscription_price',
         'annual_subscription_price',
         'class_subscription_price',
+        'class_three_month_price',
+        'class_six_month_price',
+        'class_twelve_month_price',
     ];
 }

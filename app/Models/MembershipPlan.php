@@ -10,11 +10,14 @@ class MembershipPlan extends Model
     protected $fillable = [
         'name',
         'duration_days',
+        'price',
+        'plan_type',
         'is_active',
     ];
 
     protected $casts = [
         'duration_days' => 'integer',
+        'price' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 

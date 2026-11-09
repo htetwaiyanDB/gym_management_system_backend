@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserRecordsController;
 use App\Http\Controllers\Api\GymClassController;
 use App\Http\Controllers\Api\PointController;
+use App\Http\Controllers\Api\MembershipPlanController;
 use Mews\Captcha\Facades\Captcha;
 
 // Login endpoint - rate limiting is handled in LoginRequest class
@@ -172,7 +173,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/pricing/six-months', [PricingController::class, 'updateSixMonths']);
         Route::put('/pricing/twelve-months', [PricingController::class, 'updateTwelveMonths']);
         Route::put('/pricing/class', [PricingController::class, 'updateClass']);
+        Route::put('/pricing/class-plans/three-months', [PricingController::class, 'updateClassThreeMonths']);
+        Route::put('/pricing/class-plans/six-months', [PricingController::class, 'updateClassSixMonths']);
+        Route::put('/pricing/class-plans/twelve-months', [PricingController::class, 'updateClassTwelveMonths']);
         Route::put('/pricing/trainers/{user}', [PricingController::class, 'updateTrainer']);
+
+        // Membership and class pricing plan management endpoints
+        Route::get('/membership-plans', [MembershipPlanController::class, 'index']);
+        Route::get('/membership-plans/{membershipPlan}', [MembershipPlanController::class, 'show']);
+        Route::post('/membership-plans', [MembershipPlanController::class, 'store']);
+        Route::put('/membership-plans/{membershipPlan}', [MembershipPlanController::class, 'update']);
+        Route::patch('/membership-plans/{membershipPlan}', [MembershipPlanController::class, 'update']);
+        Route::delete('/membership-plans/{membershipPlan}', [MembershipPlanController::class, 'destroy']);
 
         // Trainer booking endpoints
         Route::get('/trainer-bookings', [TrainerBookingController::class, 'index']);

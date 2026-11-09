@@ -11,13 +11,13 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 
 class SubscriptionController extends Controller
 {
 
     private const CLASS_PLAN_NAME = 'Class';
-    private const CLASS_MIN_DAYS = 30 ;
     private const ANNUAL_PLAN_MIN_DAYS = 360;
     private const SIX_MONTH_PLAN_MIN_DAYS = 180;
     private const THREE_MONTH_PLAN_MIN_DAYS = 90;
@@ -33,23 +33,16 @@ class SubscriptionController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        $pricingSetting = PricingSetting::query()->firstOrCreate(
-            [],
-            [
-                'class_subscription_price' => 70000,
-                'monthly_subscription_price' => 80000,
-                'three_month_subscription_price' => 240000,
-                'quarterly_subscription_price' => 400000,
-                'annual_subscription_price' => 960000,
-            ]
-        );
+        $pricingSetting = $this->pricingSetting();
 
         $today = Carbon::today();
 
         return response()->json([
             'subscriptions' => $subscriptions->map(function (MemberMembership $subscription) use ($pricingSetting, $today) {
                 $durationDays = $subscription->plan?->duration_days ?? 0;
-                $price = $this->resolvePlanPrice($subscription->plan?->name, $durationDays, $pricingSetting);
+                $price = $subscription->plan
+                    ? $this->resolvePlanPrice($subscription->plan, $pricingSetting)
+                    : null;
                 $discountPercentage = $subscription->discount_percentage !== null
                     ? (float) $subscription->discount_percentage
                     : null;
@@ -106,17 +99,22 @@ class SubscriptionController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone']);
 
-        $pricingSetting = PricingSetting::query()->firstOrCreate(
-            [],
-            [
-                'class_subscription_price' => 70000,
-                'monthly_subscription_price' => 80000,
-                'three_month_subscription_price' => 240000,
-                'quarterly_subscription_price' => 400000,
-                'annual_subscription_price' => 960000,
-            ]
-        );
-        $plans = $this->syncPricingPlans($pricingSetting);
+        $pricingSetting = $this->pricingSetting();
+        $plans = MembershipPlan::query()
+            ->where('is_active', true)
+            ->orderBy('plan_type')
+            ->orderBy('duration_days')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (MembershipPlan $plan) => [
+                'id' => $plan->id,
+                'name' => $plan->name,
+                'duration_days' => $plan->duration_days,
+                'price' => $this->resolvePlanPrice($plan, $pricingSetting),
+                'plan_type' => $plan->plan_type,
+                'is_active' => $plan->is_active,
+            ])
+            ->values();
 
         return response()->json([
             'members' => $members,
@@ -139,6 +137,12 @@ class SubscriptionController extends Controller
 
         $plan = MembershipPlan::query()->findOrFail($data['membership_plan_id']);
 
+        if (! $plan->is_active) {
+            throw ValidationException::withMessages([
+                'membership_plan_id' => ['The selected membership plan is inactive and cannot be used for a new subscription.'],
+            ]);
+        }
+
         $startDate = isset($data['start_date'])
             ? Carbon::parse($data['start_date'])
             : Carbon::today();
@@ -147,18 +151,9 @@ class SubscriptionController extends Controller
             ? $startDate->copy()->addDays((int) $plan->duration_days)
             : $startDate->copy();
 
-        $pricingSetting = PricingSetting::query()->firstOrCreate(
-            [],
-            [
-                'class_subscription_price' => 70000,
-                'monthly_subscription_price' => 80000,
-                'three_month_subscription_price' => 240000,
-                'quarterly_subscription_price' => 400000,
-                'annual_subscription_price' => 960000,
-            ]
-        );
+        $pricingSetting = $this->pricingSetting();
 
-        $price = $this->resolvePlanPrice($plan->name, $plan->duration_days, $pricingSetting) ?? 0;
+        $price = $this->resolvePlanPrice($plan, $pricingSetting) ?? 0;
         $hasDiscount = array_key_exists('discount_percentage', $data)
             && $data['discount_percentage'] !== null
             && $data['discount_percentage'] !== '';
@@ -349,13 +344,31 @@ class SubscriptionController extends Controller
     }
 
 
-    private function resolvePlanPrice(?string $planName, ?int $durationDays, ?PricingSetting $pricingSetting): ?float
+    private function resolvePlanPrice(MembershipPlan $plan, ?PricingSetting $pricingSetting): ?float
     {
+        if ($plan->price !== null) {
+            return (float) $plan->price;
+        }
+
+        $durationDays = $plan->duration_days;
+
         if (! $pricingSetting || ! $durationDays) {
             return null;
         }
 
-        if ($planName === self::CLASS_PLAN_NAME) {
+        if ($plan->plan_type === 'class' || $plan->name === self::CLASS_PLAN_NAME) {
+            if ($durationDays >= self::ANNUAL_PLAN_MIN_DAYS && $pricingSetting->class_twelve_month_price !== null) {
+                return (float) $pricingSetting->class_twelve_month_price;
+            }
+
+            if ($durationDays >= self::SIX_MONTH_PLAN_MIN_DAYS && $pricingSetting->class_six_month_price !== null) {
+                return (float) $pricingSetting->class_six_month_price;
+            }
+
+            if ($durationDays >= self::THREE_MONTH_PLAN_MIN_DAYS && $pricingSetting->class_three_month_price !== null) {
+                return (float) $pricingSetting->class_three_month_price;
+            }
+
             return (float) $pricingSetting->class_subscription_price;
         }
 
@@ -379,51 +392,18 @@ class SubscriptionController extends Controller
 
         return null;
     }
-        private function syncPricingPlans(PricingSetting $pricingSetting): array
+
+    private function pricingSetting(): PricingSetting
     {
-        $definitions = [
-            [
-                'name' => self::CLASS_PLAN_NAME,
-                'duration_days' => self::CLASS_MIN_DAYS,
-                'price' => (float) $pricingSetting->class_subscription_price,
-            ],
-            [
-                'name' => '1 Month',
-                'duration_days' => self::MONTHLY_PLAN_MIN_DAYS,
-                'price' => (float) $pricingSetting->monthly_subscription_price,
-            ],
-            [
-                'name' => '3 Months',
-                'duration_days' => self::THREE_MONTH_PLAN_MIN_DAYS,
-                'price' => (float) $pricingSetting->three_month_subscription_price,
-            ],
-            [
-                'name' => '6 Months',
-                'duration_days' => self::SIX_MONTH_PLAN_MIN_DAYS,
-                'price' => (float) $pricingSetting->quarterly_subscription_price,
-            ],
-            [
-                'name' => '12 Months',
-                'duration_days' => self::ANNUAL_PLAN_MIN_DAYS,
-                'price' => (float) $pricingSetting->annual_subscription_price,
-            ],
-        ];
-
-        return collect($definitions)->map(function (array $definition) {
-            $plan = MembershipPlan::query()->updateOrCreate(
-                ['name' => $definition['name']],
-                [
-                    'duration_days' => $definition['duration_days'],
-                    'is_active' => true,
-                ]
-            );
-
-            return [
-                'id' => $plan->id,
-                'name' => $plan->name,
-                'duration_days' => $plan->duration_days,
-                'price' => $definition['price'],
-            ];
-        })->values()->all();
+        return PricingSetting::query()->first() ?? new PricingSetting([
+            'class_subscription_price' => 70000,
+            'monthly_subscription_price' => 80000,
+            'three_month_subscription_price' => 240000,
+            'quarterly_subscription_price' => 400000,
+            'annual_subscription_price' => 960000,
+            'class_three_month_price' => 200000,
+            'class_six_month_price' => 380000,
+            'class_twelve_month_price' => 700000,
+        ]);
     }
 }
