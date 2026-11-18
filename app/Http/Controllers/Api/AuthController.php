@@ -3,24 +3,24 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Api\LoginRequest;
-use App\Http\Requests\Api\RegisterRequest;
-use App\Http\Requests\Api\PublicRegisterRequest;
-use App\Http\Requests\Api\VerifyEmailRequest;
 use App\Http\Requests\Api\ForgotPasswordRequest;
+use App\Http\Requests\Api\LoginRequest;
+use App\Http\Requests\Api\PublicRegisterRequest;
+use App\Http\Requests\Api\RegisterRequest;
 use App\Http\Requests\Api\UpdateProfileRequest;
 use App\Http\Requests\Api\UpdateUserRequest;
-use Illuminate\Http\Request;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use App\Http\Requests\Api\VerifyEmailRequest;
 use App\Mail\EmailVerificationCodeMail;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
-
     /**
      * Register Endpoint
      * Creates a new user account with validated credentials
@@ -44,7 +44,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Root user cannot be created via API. Root user is only created through database seeding.'
+                'message' => 'Root user cannot be created via API. Root user is only created through database seeding.',
             ], 403);
         }
 
@@ -52,11 +52,11 @@ class AuthController extends Controller
         // Password will be automatically hashed by User model's 'hashed' cast
         $user = User::create([
             'user_id' => $request->validated('user_id'),
-            'name'     => $request->validated('name'),
-            'email'    => $request->validated('email'),
-            'phone'    => $request->validated('phone'),
-            'password' => $request->validated('password'),
-            'role'     => $role,
+            'name' => $request->validated('name'),
+            'email' => $request->validated('email'),
+            'phone' => $request->validated('phone'),
+            'password' => Hash::make($request->validated('password')),
+            'role' => $role,
             'card_id' => $request->validated('card_id'),
             'email_verified_at' => now(),
         ]);
@@ -74,14 +74,14 @@ class AuthController extends Controller
         // Return sanitized user data (exclude sensitive fields)
         return response()->json([
             'message' => 'User registered successfully',
-            'user'    => [
+            'user' => [
                 'user_id' => $user->user_id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'role' => $user->role,
                 'created_at' => $user->created_at,
-            ]
+            ],
         ], 201);
     }
 
@@ -97,7 +97,7 @@ class AuthController extends Controller
             'name' => $request->validated('name'),
             'email' => $request->validated('email'),
             'phone' => $request->validated('phone'),
-            'password' => $request->validated('password'),
+            'password' => Hash::make($request->validated('password')),
             'card_id' => $request->validated('card_id'),
             'role' => $request->validated('role'),
             'email_verification_code' => $verificationCode,
@@ -147,7 +147,6 @@ class AuthController extends Controller
         ]);
     }
 
-
     /**
      * Login Endpoint
      * Authenticates user and returns access token
@@ -169,15 +168,15 @@ class AuthController extends Controller
         // Return sanitized user data
         return response()->json([
             'message' => 'Login successful',
-            'token'   => $token->plainTextToken,
+            'token' => $token->plainTextToken,
             'expires_at' => $expiresAt->toIso8601String(),
-            'user'    => [
+            'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'phone' => $user->phone,
                 'email' => $user->email,
                 'role' => $user->role,
-            ]
+            ],
         ]);
     }
 
@@ -203,7 +202,7 @@ class AuthController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Logged out successfully'
+            'message' => 'Logged out successfully',
         ]);
     }
 
@@ -247,12 +246,12 @@ class AuthController extends Controller
 
         // Update password if provided
         if ($request->has('password')) {
-            $user->password = $request->validated('password');
+            $user->password = Hash::make($request->validated('password'));
             $updatedFields[] = 'password';
         }
 
         // Only save if there are changes
-        if (!empty($updatedFields)) {
+        if (! empty($updatedFields)) {
             $user->save();
 
             // Log the profile update for audit trail
@@ -274,7 +273,7 @@ class AuthController extends Controller
                     'email_verified_at' => $user->email_verified_at,
                     'notifications_enabled' => $user->notifications_enabled,
                     'updated_at' => $user->updated_at,
-                ]
+                ],
             ], 200);
         }
 
@@ -288,7 +287,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'role' => $user->role,
                 'notifications_enabled' => $user->notifications_enabled,
-            ]
+            ],
         ], 200);
     }
 
@@ -297,7 +296,6 @@ class AuthController extends Controller
      * Returns a list of users in the system
      * Can show active users or soft-deleted users based on query parameter
      * ONLY accessible by administrator
-
      */
     public function index(Request $request)
     {
@@ -327,7 +325,7 @@ class AuthController extends Controller
         }
 
         // Get all active users (default), excluding sensitive fields
-        $users = User::select('id', 'user_id', 'name','phone','email', 'role', 'email_verified_at', 'created_at', 'updated_at')
+        $users = User::select('id', 'user_id', 'name', 'phone', 'email', 'role', 'email_verified_at', 'created_at', 'updated_at')
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -365,7 +363,7 @@ class AuthController extends Controller
 
         // Security: Always return success message to prevent user enumeration
         // Don't reveal whether user exists or not
-        if (!$user) {
+        if (! $user) {
             Log::warning('Password reset requested for non-existent user', [
                 'requested_by' => $request->user()->id,
                 'requested_email' => $request->validated('email') ?? null,
@@ -375,13 +373,13 @@ class AuthController extends Controller
 
             // Return generic success message to prevent user enumeration
             return response()->json([
-                'message' => 'If the email address exists in our system, a password reset link has been sent.'
+                'message' => 'If the email address exists in our system, a password reset link has been sent.',
             ], 200);
         }
 
         // Prevent root user from resetting their own password through this endpoint
         // (They should use the standard forgot password flow)
-       if ($user->role === 'administrator') {
+        if ($user->role === 'administrator') {
             Log::warning('Attempt to send password reset link to administrator via admin endpoint blocked', [
                 'attempted_by' => $request->user()->id,
                 'target_user_id' => $user->id,
@@ -389,7 +387,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Cannot send password reset link to root user through this endpoint.'
+                'message' => 'Cannot send password reset link to root user through this endpoint.',
             ], 403);
         }
 
@@ -411,7 +409,7 @@ class AuthController extends Controller
         // Always return generic success message to prevent information disclosure
         // Don't reveal whether email was actually sent or user details
         return response()->json([
-            'message' => 'If the email address exists in our system, a password reset link has been sent.'
+            'message' => 'If the email address exists in our system, a password reset link has been sent.',
         ], 200);
     }
 
@@ -419,22 +417,21 @@ class AuthController extends Controller
      * Delete User Endpoint
      * Deletes a user from the system
      * ONLY accessible by administrator
-
      */
     public function destroy(Request $request, $id)
     {
         // Validate that id is a valid integer
-        if (!is_numeric($id) || (int)$id != $id) {
+        if (! is_numeric($id) || (int) $id != $id) {
             return response()->json([
-                'message' => 'Invalid user ID provided.'
+                'message' => 'Invalid user ID provided.',
             ], 400);
         }
 
         $user = $this->resolveUser($id);
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
-                'message' => 'The specified user does not exist.'
+                'message' => 'The specified user does not exist.',
             ], 404);
         }
 
@@ -447,7 +444,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Cannot delete root user. Root user cannot be removed from the system.'
+                'message' => 'Cannot delete root user. Root user cannot be removed from the system.',
             ], 403);
         }
 
@@ -487,17 +484,17 @@ class AuthController extends Controller
      */
     public function forceDestroy(Request $request, $id)
     {
-        if (!is_numeric($id) || (int)$id != $id) {
+        if (! is_numeric($id) || (int) $id != $id) {
             return response()->json([
-                'message' => 'Invalid user ID provided.'
+                'message' => 'Invalid user ID provided.',
             ], 400);
         }
 
         $user = $this->resolveUser($id, true);
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
-                'message' => 'The specified user does not exist.'
+                'message' => 'The specified user does not exist.',
             ], 404);
         }
 
@@ -509,7 +506,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Cannot delete root user. Root user cannot be removed from the system.'
+                'message' => 'Cannot delete root user. Root user cannot be removed from the system.',
             ], 403);
         }
 
@@ -540,7 +537,6 @@ class AuthController extends Controller
         ], 200);
     }
 
-
     /**
      * Update User Endpoint
      * Updates a user in the system
@@ -548,17 +544,17 @@ class AuthController extends Controller
      */
     public function updateUser(UpdateUserRequest $request, $id)
     {
-        if (!is_numeric($id) || (int)$id != $id) {
+        if (! is_numeric($id) || (int) $id != $id) {
             return response()->json([
-                'message' => 'Invalid user ID provided.'
+                'message' => 'Invalid user ID provided.',
             ], 400);
         }
 
         $user = $this->resolveUser($id);
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
-                'message' => 'The specified user does not exist.'
+                'message' => 'The specified user does not exist.',
             ], 404);
         }
 
@@ -570,7 +566,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Cannot update root user through this endpoint.'
+                'message' => 'Cannot update root user through this endpoint.',
             ], 403);
         }
 
@@ -612,11 +608,11 @@ class AuthController extends Controller
         }
 
         if ($request->has('password')) {
-            $user->password = $request->validated('password');
+            $user->password = Hash::make($request->validated('password'));
             $updatedFields[] = 'password';
         }
 
-        if (!empty($updatedFields)) {
+        if (! empty($updatedFields)) {
             $user->save();
 
             Log::info('User updated by administrator', [
@@ -640,7 +636,7 @@ class AuthController extends Controller
                     'email_verified_at' => $user->email_verified_at,
                     'notifications_enabled' => $user->notifications_enabled,
                     'updated_at' => $user->updated_at,
-                ]
+                ],
             ], 200);
         }
 
@@ -654,7 +650,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'role' => $user->role,
                 'notifications_enabled' => $user->notifications_enabled,
-            ]
+            ],
         ], 200);
     }
 
@@ -662,30 +658,29 @@ class AuthController extends Controller
      * Restore User Endpoint
      * Restores a soft-deleted user
      * ONLY accessible by administrator
-
      */
     public function restore(Request $request, $id)
     {
         // Validate that id is a valid integer
-        if (!is_numeric($id) || (int)$id != $id) {
+        if (! is_numeric($id) || (int) $id != $id) {
             return response()->json([
-                'message' => 'Invalid user ID provided.'
+                'message' => 'Invalid user ID provided.',
             ], 400);
         }
 
         // Find user including soft deleted users
         $user = $this->resolveUser($id, true);
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
-                'message' => 'The specified user does not exist.'
+                'message' => 'The specified user does not exist.',
             ], 404);
         }
 
         // Check if user is actually deleted
-        if (!$user->trashed()) {
+        if (! $user->trashed()) {
             return response()->json([
-                'message' => 'User is not deleted. Nothing to restore.'
+                'message' => 'User is not deleted. Nothing to restore.',
             ], 400);
         }
 
@@ -698,7 +693,7 @@ class AuthController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Cannot restore root user through this endpoint.'
+                'message' => 'Cannot restore root user through this endpoint.',
             ], 403);
         }
 
@@ -734,7 +729,7 @@ class AuthController extends Controller
                 'role' => $user->role,
                 'deleted_at' => null,
                 'restored_at' => now(),
-            ]
+            ],
         ], 200);
     }
 

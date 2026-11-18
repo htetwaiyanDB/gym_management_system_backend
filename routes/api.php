@@ -280,6 +280,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereIn('format', ['excel', 'json']);
 
         Route::get('/messages', [MessageController::class, 'conversations']);
+        Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
+        Route::post('/messages/{user}/mark-as-read', [MessageController::class, 'markAsRead']);
         Route::get('/messages/{user}', [MessageController::class, 'thread']);
         Route::post('/messages/{user}', [MessageController::class, 'store']);
 

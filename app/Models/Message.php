@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -28,5 +29,16 @@ class Message extends Model
     public function recipient()
     {
         return $this->belongsTo(User::class, 'recipient_id');
+    }
+
+    public function scopeUnreadForAdmin(Builder $query, User $admin): Builder
+    {
+        return $query
+            ->where('recipient_id', $admin->id)
+            ->where('sender_id', '!=', $admin->id)
+            ->whereNull('read_at')
+            ->whereHas('sender', function (Builder $query) {
+                $query->whereIn('role', ['user', 'trainer']);
+            });
     }
 }

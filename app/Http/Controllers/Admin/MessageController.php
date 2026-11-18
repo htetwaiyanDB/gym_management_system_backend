@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\User;
 use App\Notifications\NewMessageNotification;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -23,6 +24,12 @@ class MessageController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        $unreadCounts = Message::query()
+            ->selectRaw('sender_id, COUNT(*) as unread_count')
+            ->unreadForAdmin($admin)
+            ->groupBy('sender_id')
+            ->pluck('unread_count', 'sender_id');
+
         $conversations = [];
         $seen = [];
 
@@ -31,7 +38,7 @@ class MessageController extends Controller
                 ? $message->recipient
                 : $message->sender;
 
-            if (!$otherUser) {
+            if (! $otherUser) {
                 continue;
             }
 
@@ -48,11 +55,55 @@ class MessageController extends Controller
                 'user_role' => $otherUser->role,
                 'preview' => $message->body,
                 'updated_at' => $message->created_at,
+                'unread_count' => (int) ($unreadCounts[$otherUser->id] ?? 0),
             ];
         }
 
+        usort($conversations, function (array $first, array $second): int {
+            $unreadComparison = ($second['unread_count'] > 0) <=> ($first['unread_count'] > 0);
+
+            if ($unreadComparison !== 0) {
+                return $unreadComparison;
+            }
+
+            return $second['updated_at'] <=> $first['updated_at'];
+        });
+
         return response([
             'conversations' => $conversations,
+        ]);
+    }
+
+    public function unreadCount(): JsonResponse
+    {
+        return response()->json([
+            'unread_count' => Message::query()
+                ->unreadForAdmin($this->adminUser())
+                ->count(),
+        ]);
+    }
+
+    public function markAsRead(User $user): JsonResponse
+    {
+        $admin = $this->adminUser();
+
+        if (! in_array($user->role, ['user', 'trainer'], true)) {
+            return response()->json([
+                'message' => 'User or trainer conversation not found.',
+            ], 404);
+        }
+
+        $markedCount = Message::query()
+            ->unreadForAdmin($admin)
+            ->where('sender_id', $user->id)
+            ->update(['read_at' => now()]);
+
+        return response()->json([
+            'message' => 'Messages marked as read.',
+            'marked_count' => $markedCount,
+            'unread_count' => Message::query()
+                ->unreadForAdmin($admin)
+                ->count(),
         ]);
     }
 
@@ -115,7 +166,6 @@ class MessageController extends Controller
         if ($this->shouldNotify($user)) {
             $user->notify(new NewMessageNotification($message, $admin));
         }
-
 
         return response(['status' => 'sent'], 201);
     }
