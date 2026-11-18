@@ -18,18 +18,18 @@
 
         <!-- Email or Phone-->
         <div>
-            <x-input-label for="email" value="Email or Phone" />
+            <x-input-label for="identifier" value="Email or Phone" />
             <x-text-input
-                id="email"
+                id="identifier"
                 class="block mt-1 w-full"
                 type="text"
                 name="identifier"
-                :value="old('email')"
+                :value="old('identifier')"
                 required
                 autofocus
                 autocomplete="username"
             />
-            <x-input-error :messages="$errors->get('email')" class="mt-2" />
+            <x-input-error :messages="$errors->get('identifier')" class="mt-2" />
         </div>
 
         <!-- Password -->

@@ -10,8 +10,26 @@ test('email verification screen can be rendered', function () {
 
     $response = $this->actingAs($user)->get('/verify-email');
 
-    $response->assertStatus(200);
+    $response->assertOk()
+        ->assertSee(route('verification.send'))
+        ->assertSee('Resend Verification Email');
 });
+
+test('email verification rejects invalid and expired one time codes', function (string $code, bool $expired) {
+    $user = User::factory()->unverified()->create([
+        'email_verification_code' => '123456',
+        'email_verification_expires_at' => $expired ? now()->subMinute() : now()->addMinutes(10),
+    ]);
+
+    $this->post('/verify-email-code', ['email' => $user->email, 'code' => $code])
+        ->assertSessionHasErrors('code');
+
+    $this->assertGuest();
+    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
+})->with([
+    'incorrect code' => ['654321', false],
+    'expired code' => ['123456', true],
+]);
 
 test('email can be verified', function () {
     $user = User::factory()->unverified()->create();

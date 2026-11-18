@@ -124,7 +124,7 @@ and backups after retention requirements are agreed. Automated cleanup is omitte
 to avoid deleting the only known-good rollback or recovery archive. Keep encrypted
 off-host backups as a separate operational control.
 
-## Validation and current deployment blocker
+## Validation
 
 Local frontend compilation and the new `/up` feature test pass. Isolated Linux
 deployment tests cover invalid IDs, successful activation, backup failure,
@@ -135,21 +135,15 @@ it produced a private compressed archive and passed `gzip -t`. No restore or sch
 change was performed. ShellCheck is configured in CI but could not be executed
 locally because downloading its binary timed out.
 
-The initial full application suite produced **57 passed / 4 failed**:
+The initial application suite exposed four existing authentication/profile failures.
+The follow-up fix aligns web login with the `identifier` field, imports registration's
+password rule, restores the signed-link verification notice, and asserts soft deletion.
+Registration tests now exercise the existing CAPTCHA and email OTP flow rather than
+assuming immediate authentication. The OTP form no longer displays the secret code.
+Additional tests cover role-specific login identifiers, missing/incorrect CAPTCHA,
+and incorrect/expired verification codes. CAPTCHA is not disabled to make CI green.
+Web login also rejects unverified member/trainer accounts so it cannot bypass the
+registration OTP flow. Administrator login retains its existing behavior.
 
-- `Auth/AuthenticationTest`: old login payload does not match current identifier,
-  CAPTCHA, and role requirements.
-- `Auth/EmailVerificationTest`: `auth.verify-email` view is missing.
-- `Auth/RegistrationTest`: old registration test assumes immediate authentication,
-  while current registration requires extra fields/CAPTCHA and sends an OTP.
-- `ProfileTest`: account deletion expects hard deletion, but `User` uses soft deletes.
-
-These pre-existing application/test inconsistencies were not hidden with skips or
-`continue-on-error`. **The pipeline will intentionally block production deployment
-until they are corrected.** Authentication fixes require their own reviewed change;
-in particular, the registration controller references `Password` without importing
-the validation-rule class. Do not disable CAPTCHA merely to make CI green.
-
-No initial production release was activated during this setup. Push the committed
-workflow when ready; use the Actions run logs to resolve verification failures
-before expecting automatic updates.
+Use the Actions run logs to confirm verification and activation. A push does not
+guarantee deployment: any failed validation or health check blocks success.

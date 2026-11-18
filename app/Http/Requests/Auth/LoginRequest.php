@@ -66,7 +66,7 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'identifier' => trans('auth.failed'),
             ]);
         }
 
@@ -74,7 +74,7 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => 'Administrators must sign in with their email address.',
+                'identifier' => 'Administrators must sign in with their email address.',
             ]);
         }
 
@@ -82,7 +82,15 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => 'Please sign in with your phone number.',
+                'identifier' => 'Please sign in with your phone number.',
+            ]);
+        }
+
+        if ($user->role !== 'administrator' && ! $user->hasVerifiedEmail()) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'identifier' => 'Please verify your email address before signing in.',
             ]);
         }
 
@@ -90,7 +98,7 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'identifier' => trans('auth.failed'),
             ]);
         }
 
@@ -113,7 +121,7 @@ class LoginRequest extends FormRequest
         $seconds = RateLimiter::availableIn($this->throttleKey());
 
         throw ValidationException::withMessages([
-            'email' => trans('auth.throttle', [
+            'identifier' => trans('auth.throttle', [
                 'seconds' => $seconds,
                 'minutes' => ceil($seconds / 60),
             ]),
@@ -125,12 +133,12 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-    return Str::transliterate(Str::lower($this->loginIdentifier()).'|'.$this->ip());
+        return Str::transliterate(Str::lower($this->loginIdentifier()).'|'.$this->ip());
     }
 
     private function loginIdentifier(): string
     {
-        return trim((string) $this->input('email'));
+        return trim((string) $this->input('identifier'));
     }
 
     private function identifierField(string $identifier): string

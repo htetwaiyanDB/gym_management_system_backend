@@ -43,11 +43,6 @@
                 required
                 autocomplete="one-time-code"
             />
-            @if (!empty($verificationCode))
-                <p class="mt-2 text-sm text-gray-600">
-                    OTP code: <span class="font-semibold">{{ $verificationCode }}</span>
-                </p>
-            @endif
             <x-input-error :messages="$errors->get('code')" class="mt-2" />
         </div>
 
