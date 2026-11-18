@@ -59,13 +59,17 @@ for failure in backup migration health; do
     fi
     [[ "$(readlink "$TEMP/base/current")" == "$TEMP/legacy" ]]
     if [[ "$failure" == backup ]]; then
-        ! grep -q 'artisan migrate' "$TEMP/events"
+        if grep -q 'artisan migrate' "$TEMP/events"; then
+            echo 'Migration ran after a failed backup'; exit 1
+        fi
     fi
     if [[ "$failure" == health ]]; then
         [[ "$(grep -c '^restart ' "$TEMP/events")" == 2 ]]
         grep -q 'Previous application restored' "$TEMP/output"
     else
-        ! grep -q '^restart ' "$TEMP/events"
+        if grep -q '^restart ' "$TEMP/events"; then
+            echo 'Service restarted before successful activation'; exit 1
+        fi
     fi
     echo "PASS: $failure failure leaves/restores previous release"
 done
