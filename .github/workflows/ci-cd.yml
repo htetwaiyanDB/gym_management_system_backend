@@ -1,0 +1,159 @@
+name: CI and production deployment
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Test and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: gym_testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: '8.2'
+          extensions: bcmath, curl, dom, fileinfo, gd, mbstring, pdo_mysql, pdo_sqlite, sqlite3, xml, zip
+          tools: composer:v2
+          coverage: none
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate dependency manifests
+        run: composer validate --strict --no-check-publish
+      - name: Install locked dependencies
+        run: |
+          composer install --prefer-dist --no-interaction --no-progress
+          npm ci --no-audit --no-fund
+      - name: Prepare isolated test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Validate PHP and deployment scripts
+        run: |
+          find app bootstrap config database routes tests scripts -name '*.php' -print0 | xargs -0 -n1 php -l
+          bash -n scripts/deploy.sh scripts/prepare-production.sh tests/Deployment/deploy-test.sh
+          shellcheck scripts/deploy.sh scripts/prepare-production.sh tests/Deployment/deploy-test.sh
+          bash tests/Deployment/deploy-test.sh
+      - name: Build frontend assets
+        run: npm run build
+      - name: Run complete test suite
+        run: composer test
+      - name: Verify production database migrations
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_DATABASE: gym_testing
+          DB_USERNAME: root
+          DB_PASSWORD: ci-only-password
+        run: php artisan migrate --force --no-interaction
+      - name: Check production caches
+        run: |
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+          php artisan optimize:clear
+      - name: Package production release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+          printf '%s\n' "$GITHUB_SHA" > REVISION
+          tar -czf "$RUNNER_TEMP/release.tar.gz" app bootstrap config database public resources routes vendor scripts artisan composer.json composer.lock REVISION
+          cd "$RUNNER_TEMP"
+          sha256sum release.tar.gz > release.tar.gz.sha256
+      - name: Store immutable release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release.tar.gz
+            ${{ runner.temp }}/release.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy production
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://api.unityfitnessmyanmar.online
+    concurrency:
+      group: gym-production
+      cancel-in-progress: false
+    steps:
+      - name: Reject superseded builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          test "$LATEST" = "$EXPECTED_SHA" || { echo 'A newer commit is on main; refusing this deployment.'; exit 1; }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: production-${{ github.sha }}
+          path: release
+      - name: Configure pinned SSH access
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload and activate tested release
+        env:
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check release.tar.gz.sha256
+          SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          TARGET=gym-deploy@47.79.35.105
+          REMOTE=/var/www/gym-deploy/incoming/$RELEASE_ID
+          "${SSH[@]}" "$TARGET" "mkdir -m 700 '$REMOTE'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 release.tar.gz release.tar.gz.sha256 "$TARGET:$REMOTE/"
+          "${SSH[@]}" "$TARGET" "cd '$REMOTE' && sha256sum --check release.tar.gz.sha256 && tar -xzf release.tar.gz scripts/deploy.sh && bash scripts/deploy.sh '$RELEASE_ID'"
+      - name: Check public HTTPS endpoint
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 10 --max-time 20 https://api.unityfitnessmyanmar.online/up
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts

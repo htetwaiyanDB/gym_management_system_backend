@@ -90,6 +90,13 @@ API reference lives in [`GYM_API_DOCUMENTATION_v2.md`](GYM_API_DOCUMENTATION_v2.
 - The API expects `Accept: application/json` and `Authorization: Bearer {token}` headers for protected endpoints.
 - Queue processing is enabled in the dev script (`composer run dev`).
 
+## Production CI/CD
+
+GitHub Actions verifies pull requests and deploys successful `main` builds using
+release directories, SSH keys, database backups, and health-check rollback.
+See [the deployment runbook](docs/DEPLOYMENT.md) for server configuration,
+recovery procedures, required repository protections, and current test blockers.
+
 ## License
 
 This project uses the MIT license.
