@@ -67,8 +67,8 @@ class BoxingPackageController extends Controller
         $validated = $request->validate([
             'name' => [$requiredRule, 'string', 'max:255'],
             'package_type' => [$requiredRule, 'string', 'max:100'],
-            'sessions_count' => [$requiredRule, 'nullable', 'integer', 'min:1', 'required_without:duration_months'],
-            'duration_months' => [$requiredRule, 'nullable', 'integer', 'min:1', 'required_without:sessions_count'],
+            'sessions_count' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'duration_months' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'price' => [$requiredRule, 'numeric', 'min:0'],
         ]);
 
