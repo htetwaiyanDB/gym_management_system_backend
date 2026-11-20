@@ -6,14 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Models\Point;
 use App\Models\RfidAttendance;
 use App\Models\User;
+use App\Support\ActivePlanReminderService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class RfidAttendanceController extends Controller
 {
+    public function __construct(
+        private readonly ActivePlanReminderService $activePlanReminderService,
+    ) {}
+
     public function registerCard(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -173,7 +180,7 @@ class RfidAttendanceController extends Controller
             ]);
         }
 
-        return response()->json([
+        $response = [
             'message' => $result['action'] === 'check_in'
                 ? 'Check-in recorded successfully.'
                 : 'Check-out recorded successfully.',
@@ -191,6 +198,27 @@ class RfidAttendanceController extends Controller
                 'attendance_date' => $result['attendance']->attendance_date?->toDateString(),
                 'source' => $result['attendance']->source,
             ],
-        ]);
+        ];
+
+        if ($result['action'] === 'check_in') {
+            try {
+                $response = [
+                    ...$response,
+                    ...$this->activePlanReminderService->forUser($user, $now),
+                ];
+            } catch (Throwable $exception) {
+                Log::warning('Unable to load active plan reminders after RFID check-in.', [
+                    'user_id' => $user->id,
+                    'attendance_id' => $result['attendance']->id,
+                    'exception' => $exception,
+                ]);
+
+                $response['subscriptions'] = [];
+                $response['trainer_bookings'] = [];
+                $response['boxing_bookings'] = [];
+            }
+        }
+
+        return response()->json($response);
     }
 }
