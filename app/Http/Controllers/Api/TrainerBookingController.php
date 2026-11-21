@@ -7,11 +7,13 @@ use App\Models\TrainerBooking;
 use App\Models\TrainerPackage;
 use App\Models\User;
 use App\Notifications\NewMessageNotification;
+use App\Support\FixedMonthPeriod;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TrainerBookingController extends Controller
 {
@@ -111,7 +113,7 @@ class TrainerBookingController extends Controller
             'sessions_count' => ['nullable', 'integer', 'min:1'],
             'price_per_session' => ['nullable', 'numeric', 'min:0'],
             'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:start_date'],
+            'end_date' => ['nullable', 'date', 'after:start_date'],
             'discount_percentage' => ['nullable', 'numeric', 'between:0,100'],
             'status' => ['nullable', 'string'],
             'paid_status' => ['nullable', 'string'],
@@ -121,7 +123,11 @@ class TrainerBookingController extends Controller
         $package = TrainerPackage::findOrFail($validated['trainer_package_id']);
         $isMonthBased = (int) ($package->duration_months ?? 0) > 0;
         $startDate = Carbon::parse($validated['start_date']);
-        $endDate = Carbon::parse($validated['end_date']);
+        $endDate = $isMonthBased
+            ? FixedMonthPeriod::endDate($startDate, (int) $package->duration_months)
+            : Carbon::parse($validated['end_date'] ?? throw ValidationException::withMessages([
+                'end_date' => ['The end date field is required for session-based bookings.'],
+            ]));
         $sessionsCount = $package->sessions_count ?? (int) ($validated['sessions_count'] ?? 1);
         $sessionsCount = max(1, $sessionsCount);
         $pricePerSession = (float) ($package->price / $sessionsCount);

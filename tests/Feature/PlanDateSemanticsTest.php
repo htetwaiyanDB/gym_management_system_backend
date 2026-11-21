@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\BoxingBooking;
+use App\Models\BoxingPackage;
 use App\Models\MemberMembership;
 use App\Models\MembershipPlan;
 use App\Models\TrainerBooking;
@@ -14,7 +16,7 @@ beforeEach(function () {
     $this->trainer = User::factory()->create(['role' => 'trainer']);
 });
 
-it('characterizes the current membership and trainer package date mismatch', function () {
+it('uses the same fixed 30-day end date for membership and trainer monthly plans', function () {
     $membershipPlan = MembershipPlan::create([
         'name' => 'Date Semantics Membership',
         'duration_days' => 30,
@@ -41,7 +43,6 @@ it('characterizes the current membership and trainer package date mismatch', fun
         'trainer_id' => $this->trainer->id,
         'trainer_package_id' => $trainerPackage->id,
         'start_date' => '2026-08-10',
-        'end_date' => '2026-09-10',
     ])->assertCreated();
 
     $membership = MemberMembership::sole();
@@ -50,7 +51,7 @@ it('characterizes the current membership and trainer package date mismatch', fun
     expect($membership->start_date->toDateString())->toBe('2026-08-10')
         ->and($membership->end_date->toDateString())->toBe('2026-09-09')
         ->and($booking->month_start_date->toDateString())->toBe('2026-08-10')
-        ->and($booking->month_end_date->toDateString())->toBe('2026-09-10');
+        ->and($booking->month_end_date->toDateString())->toBe('2026-09-09');
 
     $this->getJson('/api/subscriptions')
         ->assertOk()
@@ -60,7 +61,7 @@ it('characterizes the current membership and trainer package date mismatch', fun
     $this->getJson('/api/trainer-bookings')
         ->assertOk()
         ->assertJsonPath('bookings.0.start_date', '2026-08-10T00:00:00+00:00')
-        ->assertJsonPath('bookings.0.end_date', '2026-09-10T00:00:00+00:00');
+        ->assertJsonPath('bookings.0.end_date', '2026-09-09T00:00:00+00:00');
 });
 
 it('characterizes fixed-day membership behavior at month and February boundaries', function (
@@ -89,9 +90,10 @@ it('characterizes fixed-day membership behavior at month and February boundaries
     'leap day' => ['2024-02-29', '2024-03-30'],
 ]);
 
-it('characterizes trainer booking dates as caller supplied at calendar boundaries', function (
+it('calculates trainer monthly bookings as fixed 30-day periods and ignores a supplied end date', function (
     string $startDate,
-    string $endDate,
+    string $suppliedEndDate,
+    string $expectedEndDate,
 ) {
     $package = TrainerPackage::create([
         'name' => "Calendar dates from {$startDate}",
@@ -106,18 +108,65 @@ it('characterizes trainer booking dates as caller supplied at calendar boundarie
         'trainer_id' => $this->trainer->id,
         'trainer_package_id' => $package->id,
         'start_date' => $startDate,
-        'end_date' => $endDate,
+        'end_date' => $suppliedEndDate,
     ])->assertCreated();
 
     $booking = TrainerBooking::sole();
 
     expect($booking->month_start_date->toDateString())->toBe($startDate)
-        ->and($booking->month_end_date->toDateString())->toBe($endDate);
+        ->and($booking->month_end_date->toDateString())->toBe($expectedEndDate);
 })->with([
-    'non-leap end of month' => ['2026-01-31', '2026-02-28'],
-    'non-leap February' => ['2026-02-28', '2026-03-28'],
-    'leap-year end of month' => ['2024-01-31', '2024-02-29'],
-    'leap day' => ['2024-02-29', '2024-03-29'],
+    'non-leap end of month' => ['2026-01-31', '2026-02-28', '2026-03-02'],
+    'non-leap February' => ['2026-02-28', '2026-03-28', '2026-03-30'],
+    'leap-year end of month' => ['2024-01-31', '2024-02-29', '2024-03-01'],
+    'leap day' => ['2024-02-29', '2024-03-29', '2024-03-30'],
+]);
+
+it('calculates boxing monthly bookings in the backend without an end date', function () {
+    $package = BoxingPackage::create([
+        'name' => 'Backend Calculated Boxing Package',
+        'package_type' => 'monthly',
+        'sessions_count' => null,
+        'duration_months' => 2,
+        'price' => 200000,
+    ]);
+
+    $this->postJson('/api/boxing-bookings', [
+        'member_id' => $this->member->id,
+        'trainer_id' => $this->trainer->id,
+        'boxing_package_id' => $package->id,
+        'start_date' => '2026-01-31',
+    ])->assertCreated();
+
+    $booking = BoxingBooking::sole();
+
+    expect($booking->month_start_date->toDateString())->toBe('2026-01-31')
+        ->and($booking->month_end_date->toDateString())->toBe('2026-04-01');
+});
+
+it('still requires an end date for session-based trainer and boxing bookings', function (
+    string $endpoint,
+    string $packageModel,
+    string $packageKey,
+) {
+    $package = $packageModel::create([
+        'name' => "Session package for {$endpoint}",
+        'package_type' => 'sessions',
+        'sessions_count' => 10,
+        'duration_months' => null,
+        'price' => 200000,
+    ]);
+
+    $this->postJson("/api/{$endpoint}", [
+        'member_id' => $this->member->id,
+        'trainer_id' => $this->trainer->id,
+        $packageKey => $package->id,
+        'start_date' => '2026-08-10',
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('end_date');
+})->with([
+    'trainer' => ['trainer-bookings', TrainerPackage::class, 'trainer_package_id'],
+    'boxing' => ['boxing-bookings', BoxingPackage::class, 'boxing_package_id'],
 ]);
 
 it('characterizes timezone conversion at the trainer booking API boundary', function () {
@@ -140,10 +189,10 @@ it('characterizes timezone conversion at the trainer booking API boundary', func
     $booking = TrainerBooking::sole();
 
     expect($booking->getRawOriginal('month_start_date'))->toBe('2026-08-10 00:30:00')
-        ->and($booking->getRawOriginal('month_end_date'))->toBe('2026-09-10 00:30:00');
+        ->and($booking->getRawOriginal('month_end_date'))->toBe('2026-09-09 00:30:00');
 
     $this->getJson('/api/trainer-bookings')
         ->assertOk()
         ->assertJsonPath('bookings.0.start_date', '2026-08-10T00:30:00+00:00')
-        ->assertJsonPath('bookings.0.end_date', '2026-09-10T00:30:00+00:00');
+        ->assertJsonPath('bookings.0.end_date', '2026-09-09T00:30:00+00:00');
 });
